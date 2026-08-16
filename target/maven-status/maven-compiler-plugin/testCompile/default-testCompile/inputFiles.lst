@@ -1,0 +1,10 @@
+/home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/BaseIntegrationTest.java
+/home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/AuthorizationTest.java
+/home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/unit/CategoryHierarchyTest.java
+/home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/OnlineShopApplicationTests.java
+/home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/AuthenticationTest.java
+/home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/ApplicationContextTest.java
+/home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/OrderFlowTest.java
+/home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/unit/OrderStatusLogicTest.java
+/home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/unit/AddressSnapshotTest.java
+/home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/unit/UserStatusTest.java

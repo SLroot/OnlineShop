@@ -1,0 +1,105 @@
+package com.shop.online_shop.controller;
+
+import com.shop.online_shop.dto.request.AddressRequest;
+import com.shop.online_shop.dto.response.AddressResponse;
+import com.shop.online_shop.security.UserPrincipal;
+import com.shop.online_shop.service.AddressService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/v1/addresses")
+@RequiredArgsConstructor
+@PreAuthorize("hasAuthority('ADDRESS_MANAGE')")
+@Tag(name = "Addresses", description = "آدرس‌های کاربر جاری")
+public class AddressController {
+
+    private final AddressService addressService;
+
+    @GetMapping
+    @Operation(summary = "آدرس‌های من",
+               description = "آدرس پیش‌فرض همیشه اول لیست است",
+               security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<List<AddressResponse>> myAddresses(
+            @AuthenticationPrincipal UserPrincipal me) {
+
+        return ResponseEntity.ok(addressService.getMyAddresses(me.getId())
+                .stream().map(AddressResponse::from).toList());
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "جزئیات یک آدرس",
+               security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponse(responseCode = "404", description = "آدرس یافت نشد یا متعلق به شما نیست")
+    public ResponseEntity<AddressResponse> getById(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserPrincipal me) {
+
+        return ResponseEntity.ok(
+                AddressResponse.from(addressService.getMyAddress(id, me.getId())));
+    }
+
+    @PostMapping
+    @Operation(summary = "افزودن آدرس",
+               description = "اولین آدرس خودکار پیش‌فرض می‌شود",
+               security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "ساخته شد"),
+        @ApiResponse(responseCode = "400", description = "خطای اعتبارسنجی")
+    })
+    public ResponseEntity<AddressResponse> create(
+            @Valid @RequestBody AddressRequest request,
+            @AuthenticationPrincipal UserPrincipal me) {
+
+        var created = addressService.create(request, me.getId());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(AddressResponse.from(created));
+    }
+
+    @PutMapping("/{id}")
+    @Operation(summary = "ویرایش آدرس",
+               security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<AddressResponse> update(
+            @PathVariable Long id,
+            @Valid @RequestBody AddressRequest request,
+            @AuthenticationPrincipal UserPrincipal me) {
+
+        return ResponseEntity.ok(
+                AddressResponse.from(addressService.update(id, request, me.getId())));
+    }
+
+    @PatchMapping("/{id}/default")
+    @Operation(summary = "تعیین آدرس پیش‌فرض",
+               security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<AddressResponse> setDefault(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserPrincipal me) {
+
+        return ResponseEntity.ok(
+                AddressResponse.from(addressService.setDefault(id, me.getId())));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "حذف آدرس",
+               description = "اگر آدرس پیش‌فرض حذف شود، آدرس بعدی جایگزین می‌گردد",
+               security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<Void> delete(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserPrincipal me) {
+
+        addressService.delete(id, me.getId());
+        return ResponseEntity.noContent().build();
+    }
+}

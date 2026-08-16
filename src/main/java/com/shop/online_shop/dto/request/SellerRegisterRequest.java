@@ -1,0 +1,29 @@
+package com.shop.online_shop.dto.request;
+
+import jakarta.validation.constraints.*;
+
+public record SellerRegisterRequest(
+
+    @NotBlank(message = "ایمیل الزامی است")
+    @Email(message = "فرمت ایمیل نامعتبر است")
+    String email,
+
+    @NotBlank(message = "رمز عبور الزامی است")
+    @Size(min = 6, message = "رمز عبور حداقل ۶ کاراکتر باشد")
+    String password,
+
+    @NotBlank(message = "نام و نام خانوادگی الزامی است")
+    String fullName,
+
+    @NotBlank(message = "شماره موبایل الزامی است")
+    @Pattern(regexp = "^09\\d{9}$", message = "شماره موبایل نامعتبر است")
+    String phone,
+
+    @NotBlank(message = "نام فروشگاه الزامی است")
+    @Size(max = 128, message = "نام فروشگاه حداکثر ۱۲۸ کاراکتر")
+    String shopName,
+
+    @NotBlank(message = "تلفن ثابت الزامی است")
+    @Pattern(regexp = "^0\\d{10}$", message = "تلفن ثابت نامعتبر است")
+    String landline
+) {}
