@@ -15,6 +15,8 @@ import com.shop.online_shop.repository.OrderItemRepository;
 import com.shop.online_shop.repository.OrderRepository;
 import com.shop.online_shop.repository.PaymentRepository;
 import com.shop.online_shop.repository.ProductRepository;
+import com.shop.online_shop.security.AccessGuard;
+import com.shop.online_shop.security.Scope;
 import com.shop.online_shop.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,14 +34,16 @@ import java.util.List;
 /**
  * منطق سفارش.
  * عمداً به PaymentService وابسته نیست تا حلقه وابستگی ایجاد نشود؛
- * هماهنگی بازپرداخت هنگام لغو، در لایه کنترلر انجام می‌شود.
+ * هماهنگی بازپرداخت هنگام لغو در لایه کنترلر انجام می‌شود.
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class OrderService {
 
+    private static final String READ_OWN = "ORDER_READ";
     private static final String READ_ALL = "ORDER_READ_ALL";
+    private static final String FULFILL = "ORDER_FULFILL";
     private static final String UPDATE_ANY = "ORDER_UPDATE";
 
     private final OrderRepository orderRepository;
@@ -49,6 +53,7 @@ public class OrderService {
     private final CartRepository cartRepository;
     private final AddressService addressService;
     private final AuditLogService auditLogService;
+    private final AccessGuard accessGuard;
 
     /** نتیجه ثبت سفارش، همراه با توضیح اقلامی که کنار گذاشته شدند */
     public record OrderResult(Order order, List<String> notices) {}
@@ -161,11 +166,70 @@ public class OrderService {
         return new OrderResult(saved, notices);
     }
 
-    // ==================== خواندن ====================
+    // ==================== فهرست با دامنه دید ====================
 
+    /**
+     * یک نقطه ورود برای سفارش‌ها.
+     * mine — سفارش‌های خود کاربر
+     * all  — سفارش‌های همه، نیازمند ORDER_READ_ALL
+     */
     @Transactional(readOnly = true)
-    public Page<Order> getMyOrders(Long userId, Pageable pageable) {
-        return orderRepository.findByUserId(userId, pageable);
+    public Page<Order> list(Scope scope, OrderStatus status, Long userId,
+                            UserPrincipal me, Pageable pageable) {
+
+        return switch (scope) {
+
+            case ALL -> {
+                accessGuard.requireAuthority(me, READ_ALL);
+
+                if (status != null) {
+                    yield orderRepository.findByStatus(status, pageable);
+                }
+                yield userId != null
+                        ? orderRepository.findByUserId(userId, pageable)
+                        : orderRepository.findAll(pageable);
+            }
+
+            // دامنه عمومی برای سفارش معنا ندارد و به سفارش‌های خود کاربر برمی‌گردد
+            case PUBLIC, MINE -> {
+                accessGuard.requireAuthority(me, READ_OWN);
+
+                yield status != null
+                        ? orderRepository.findByUserIdAndStatus(me.getId(), status, pageable)
+                        : orderRepository.findByUserId(me.getId(), pageable);
+            }
+        };
+    }
+
+    /**
+     * اقلام سفارش از دید فروشنده.
+     * mine — اقلام مربوط به محصولات خود فروشنده
+     * all  — اقلام همه فروشندگان، نیازمند ORDER_READ_ALL
+     */
+    @Transactional(readOnly = true)
+    public Page<OrderItem> listItems(Scope scope, OrderItemStatus status, Long sellerId,
+                                     UserPrincipal me, Pageable pageable) {
+
+        Long targetSeller = switch (scope) {
+            case ALL -> {
+                accessGuard.requireAuthority(me, READ_ALL);
+                yield sellerId;                 // null یعنی همه فروشندگان
+            }
+            case PUBLIC, MINE -> {
+                accessGuard.requireAuthority(me, FULFILL);
+                yield me.getId();
+            }
+        };
+
+        if (targetSeller == null) {
+            return status != null
+                    ? orderItemRepository.findByStatus(status, pageable)
+                    : orderItemRepository.findAll(pageable);
+        }
+
+        return status != null
+                ? orderItemRepository.findBySellerIdAndStatus(targetSeller, status, pageable)
+                : orderItemRepository.findBySellerId(targetSeller, pageable);
     }
 
     /** صاحب سفارش یا کسی که مجوز دیدن همه را دارد */
@@ -183,24 +247,8 @@ public class OrderService {
         return order;
     }
 
-    @Transactional(readOnly = true)
-    public Page<Order> getAllOrders(OrderStatus status, Pageable pageable) {
-        return status != null
-                ? orderRepository.findByStatus(status, pageable)
-                : orderRepository.findAll(pageable);
-    }
-
-    @Transactional(readOnly = true)
-    public Page<OrderItem> getSellerItems(Long sellerId, OrderItemStatus status,
-                                          Pageable pageable) {
-        return status != null
-                ? orderItemRepository.findBySellerIdAndStatus(sellerId, status, pageable)
-                : orderItemRepository.findBySellerId(sellerId, pageable);
-    }
-
     // ==================== تغییر وضعیت ====================
 
-    /** فروشنده وضعیت اقلام خودش را جلو می‌برد */
     @Transactional
     public OrderItem updateItemStatus(Long itemId, OrderItemStatus newStatus,
                                       UserPrincipal me) {
@@ -219,7 +267,6 @@ public class OrderService {
         return item;
     }
 
-    /** فروشنده یا مدیر یک قلم را لغو می‌کند — موجودی برمی‌گردد */
     @Transactional
     public OrderItem cancelItem(Long itemId, String reason, UserPrincipal me) {
         OrderItem item = resolveItemForManagement(itemId, me);
@@ -248,7 +295,7 @@ public class OrderService {
     }
 
     /**
-     * لغو کل سفارش — تا قبل از ارسال.
+     * لغو کل سفارش — تا پیش از ارسال.
      * بازپرداخت جداگانه توسط کنترلر صدا زده می‌شود.
      */
     @Transactional
@@ -294,7 +341,6 @@ public class OrderService {
 
     // ==================== لغو خودکار ====================
 
-    /** توسط زمان‌بند صدا زده می‌شود */
     @Transactional
     public int cancelExpiredOrders() {
         List<Order> expired = orderRepository.findExpiredUnpaid(Instant.now());
@@ -323,7 +369,6 @@ public class OrderService {
 
     // ==================== پس از پرداخت ====================
 
-    /** همه اقلام در انتظار پرداخت به وضعیت پرداخت‌شده می‌روند */
     @Transactional
     public void markAsPaid(Order order) {
         order.getItems().stream()
@@ -398,7 +443,7 @@ public class OrderService {
         orderRepository.save(order);
     }
 
-    /** فروشنده فقط روی اقلام خودش، مدیر روی همه */
+    /** فروشنده فقط روی اقلام خودش، دارنده مجوز سراسری روی همه */
     private OrderItem resolveItemForManagement(Long itemId, UserPrincipal me) {
         if (me.hasAuthority(UPDATE_ANY)) {
             return orderItemRepository.findById(itemId)

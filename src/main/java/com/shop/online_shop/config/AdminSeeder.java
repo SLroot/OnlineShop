@@ -1,5 +1,6 @@
 package com.shop.online_shop.config;
 
+import com.shop.online_shop.entity.RoleCode;
 import com.shop.online_shop.entity.User;
 import com.shop.online_shop.entity.UserStatus;
 import com.shop.online_shop.repository.RoleRepository;
@@ -14,7 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
-@Order(2)                       // بعد از DataSeeder اجرا می‌شود
+@Order(2)                       // پس از DataSeeder اجرا می‌شود
 @RequiredArgsConstructor
 @Slf4j
 public class AdminSeeder implements CommandLineRunner {
@@ -39,7 +40,8 @@ public class AdminSeeder implements CommandLineRunner {
             return;
         }
 
-        roleRepository.findByName("ADMIN").ifPresentOrElse(
+        // نقش با code جستجو می‌شود نه name، چون name قابل ویرایش است
+        roleRepository.findByCode(RoleCode.ADMIN).ifPresentOrElse(
             adminRole -> {
                 userRepository.save(User.builder()
                         .email(email)
@@ -52,7 +54,8 @@ public class AdminSeeder implements CommandLineRunner {
 
                 log.info("Admin user created: {}", email);
             },
-            () -> log.error("ADMIN role not found — admin user was not created")
+            () -> log.error("Base role {} not found — admin user was not created",
+                    RoleCode.ADMIN)
         );
     }
 }

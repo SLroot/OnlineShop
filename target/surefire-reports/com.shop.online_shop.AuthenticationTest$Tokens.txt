@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.shop.online_shop.AuthenticationTest$Tokens
 -------------------------------------------------------------------------------
-Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.106 s -- in com.shop.online_shop.AuthenticationTest$Tokens
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.084 s -- in com.shop.online_shop.AuthenticationTest$Tokens

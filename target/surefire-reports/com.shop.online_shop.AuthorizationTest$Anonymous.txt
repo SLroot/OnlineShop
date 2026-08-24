@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.shop.online_shop.AuthorizationTest$Anonymous
 -------------------------------------------------------------------------------
-Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.389 s -- in com.shop.online_shop.AuthorizationTest$Anonymous
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.349 s -- in com.shop.online_shop.AuthorizationTest$Anonymous

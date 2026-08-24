@@ -7,22 +7,48 @@ import org.springframework.stereotype.Component;
 public class AccessGuard {
 
     /**
-     * منابع عمومی مثل محصول — وجودشان راز نیست، پس ۴۰۳ می‌دهیم.
+     * منابع عمومی مانند محصول — وجودشان راز نیست، پس ۴۰۳ می‌دهیم.
      */
     public void assertOwnerOrPrivileged(Long ownerId, UserPrincipal me,
                                         String privilegedAuthority, String message) {
-        if (ownerId.equals(me.getId())) return;
-        if (me.hasAuthority(privilegedAuthority)) return;
+        if (me != null && ownerId.equals(me.getId())) {
+            return;
+        }
+        if (me != null && me.hasAuthority(privilegedAuthority)) {
+            return;
+        }
         throw ApiException.forbidden(message);
     }
 
     /**
-     * منابع خصوصی مثل سفارش و آدرس — ۴۰۴ می‌دهیم تا وجود رکورد لو نرود.
+     * منابع خصوصی مانند سفارش و آدرس — ۴۰۴ می‌دهیم تا وجود رکورد لو نرود.
      */
     public void assertOwnerOrPrivilegedPrivate(Long ownerId, UserPrincipal me,
                                                String privilegedAuthority, String message) {
-        if (ownerId.equals(me.getId())) return;
-        if (me.hasAuthority(privilegedAuthority)) return;
+        if (me != null && ownerId.equals(me.getId())) {
+            return;
+        }
+        if (me != null && me.hasAuthority(privilegedAuthority)) {
+            return;
+        }
         throw ApiException.notFound(message);
+    }
+
+    /**
+     * بررسی مجوز لازم برای یک دامنه دید.
+     * پیام خطا نام مجوز را می‌گوید تا پنل مدیریت بتواند آن را نمایش دهد.
+     */
+    public void requireAuthority(UserPrincipal me, String authority) {
+        if (me == null) {
+            throw ApiException.unauthorized("برای این بخش باید وارد شوید");
+        }
+        if (!me.hasAuthority(authority)) {
+            throw ApiException.forbidden(
+                    "برای این عملیات به مجوز " + authority + " نیاز دارید");
+        }
+    }
+
+    public boolean has(UserPrincipal me, String authority) {
+        return me != null && me.hasAuthority(authority);
     }
 }

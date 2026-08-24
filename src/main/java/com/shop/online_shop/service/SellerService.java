@@ -23,14 +23,15 @@ public class SellerService {
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
     private final RefreshTokenService refreshTokenService;
-    private final AuditLogService auditLogService;
     private final CartService cartService;
+    private final AuditLogService auditLogService;
 
+    /** فروشندگان بر اساس پرچم نقش شناسایی می‌شوند، نه نام آن */
     @Transactional(readOnly = true)
     public Page<User> list(UserStatus status, Pageable pageable) {
         return status != null
-                ? userRepository.findByRoleNameAndStatus("SELLER", status, pageable)
-                : userRepository.findByRoleName("SELLER", pageable);
+                ? userRepository.findSellersByStatus(status, pageable)
+                : userRepository.findSellers(pageable);
     }
 
     @Transactional(readOnly = true)
@@ -38,7 +39,7 @@ public class SellerService {
         User user = userRepository.findById(sellerId)
                 .orElseThrow(() -> ApiException.notFound("فروشنده یافت نشد"));
 
-        if (!"SELLER".equals(user.getRole().getName())) {
+        if (!user.needsSellerApproval()) {
             throw ApiException.notFound("فروشنده یافت نشد");
         }
         return user;
@@ -81,8 +82,8 @@ public class SellerService {
     }
 
     /**
-     * تعلیق فروشنده — محصولات فعالش غیرفعال و علامت‌گذاری می‌شوند
-     * تا موقع رفع تعلیق فقط همان‌ها برگردند.
+     * تعلیق فروشنده — تنها محصولات فعالش علامت می‌خورند تا هنگام
+     * رفع تعلیق، محصولاتی که خودش غیرفعال کرده بود دست‌نخورده بمانند.
      */
     @Transactional
     public User suspend(Long sellerId, String reason, Long reviewerId) {
@@ -128,9 +129,11 @@ public class SellerService {
 
     private void markReviewed(User seller, Long reviewerId) {
         SellerProfile profile = seller.getSellerProfile();
+
         if (profile == null) {
             throw ApiException.badRequest("پروفایل فروشندگی یافت نشد");
         }
+
         profile.setReviewedBy(reviewerId);
         profile.setReviewedAt(Instant.now());
     }

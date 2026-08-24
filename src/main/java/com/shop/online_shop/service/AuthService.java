@@ -1,9 +1,18 @@
 package com.shop.online_shop.service;
 
-import com.shop.online_shop.dto.request.*;
+import com.shop.online_shop.dto.request.ChangePasswordRequest;
+import com.shop.online_shop.dto.request.LoginRequest;
+import com.shop.online_shop.dto.request.RegisterRequest;
+import com.shop.online_shop.dto.request.SellerRegisterRequest;
+import com.shop.online_shop.dto.request.UpdateProfileRequest;
 import com.shop.online_shop.dto.response.AuthResponse;
 import com.shop.online_shop.dto.response.UserResponse;
-import com.shop.online_shop.entity.*;
+import com.shop.online_shop.entity.RefreshToken;
+import com.shop.online_shop.entity.Role;
+import com.shop.online_shop.entity.RoleCode;
+import com.shop.online_shop.entity.SellerProfile;
+import com.shop.online_shop.entity.User;
+import com.shop.online_shop.entity.UserStatus;
 import com.shop.online_shop.exception.ApiException;
 import com.shop.online_shop.repository.RoleRepository;
 import com.shop.online_shop.repository.SellerProfileRepository;
@@ -25,9 +34,9 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final LoginAttemptService loginAttemptService;
     private final AuditLogService auditLogService;
+    private final CartService cartService;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final CartService cartService; 
 
     // ==================== ثبت‌نام ====================
 
@@ -36,7 +45,7 @@ public class AuthService {
         String email = normalize(req.email());
         assertEmailAvailable(email);
 
-        Role role = requireRole("USER");
+        Role role = requireRoleByCode(RoleCode.USER);
 
         User user = userRepository.save(User.builder()
                 .email(email)
@@ -46,7 +55,7 @@ public class AuthService {
                 .role(role)
                 .status(UserStatus.ACTIVE)
                 .build());
-        
+
         cartService.createFor(user);
 
         auditLogService.record(user.getId(), "CUSTOMER_REGISTERED", null);
@@ -54,19 +63,25 @@ public class AuthService {
     }
 
     /**
-     * ثبت‌نام فروشنده — حساب در وضعیت PENDING می‌ماند
-     * و تا تأیید مدیر امکان ورود ندارد، پس توکنی صادر نمی‌شود.
+     * ثبت‌نام فروشنده.
+     * وضعیت اولیه از روی پرچم نقش تعیین می‌شود نه نام آن، بنابراین اگر
+     * مدیر سامانه پرچم تأیید را از نقش بردارد، ثبت‌نام بدون انتظار انجام می‌شود.
      */
     @Transactional
     public void registerSeller(SellerRegisterRequest req) {
         String email = normalize(req.email());
         assertEmailAvailable(email);
 
-        if (sellerProfileRepository.existsByShopName(req.shopName().trim())) {
+        String shopName = req.shopName().trim();
+        if (sellerProfileRepository.existsByShopName(shopName)) {
             throw ApiException.conflict("این نام فروشگاه قبلاً ثبت شده است");
         }
 
-        Role role = requireRole("SELLER");
+        Role role = requireRoleByCode(RoleCode.SELLER);
+
+        UserStatus status = role.isRequiresSellerApproval()
+                ? UserStatus.PENDING
+                : UserStatus.ACTIVE;
 
         User user = userRepository.save(User.builder()
                 .email(email)
@@ -74,17 +89,16 @@ public class AuthService {
                 .fullName(req.fullName().trim())
                 .phone(req.phone())
                 .role(role)
-                .status(UserStatus.PENDING)
+                .status(status)
                 .build());
 
         sellerProfileRepository.save(SellerProfile.builder()
                 .user(user)
-                .shopName(req.shopName().trim())
+                .shopName(shopName)
                 .landline(req.landline())
                 .build());
 
-        auditLogService.record(user.getId(), "SELLER_REGISTERED",
-                "shop: " + req.shopName().trim());
+        auditLogService.record(user.getId(), "SELLER_REGISTERED", "shop: " + shopName);
     }
 
     // ==================== ورود ====================
@@ -116,14 +130,17 @@ public class AuthService {
     private void assertCanLogin(User user) {
         switch (user.getStatus()) {
             case ACTIVE -> { }
+
             case PENDING -> throw ApiException.forbidden(
-                    "درخواست فروشندگی شما در انتظار بررسی است");
+                    "درخواست شما در انتظار بررسی است");
+
             case REJECTED -> {
                 String reason = user.getSellerProfile() != null
                         ? user.getSellerProfile().getRejectionReason() : null;
                 throw ApiException.forbidden("درخواست شما رد شده است"
                         + (reason != null ? " — " + reason : ""));
             }
+
             case SUSPENDED -> {
                 String reason = user.getSellerProfile() != null
                         ? user.getSellerProfile().getSuspensionReason() : null;
@@ -140,7 +157,8 @@ public class AuthService {
         RefreshToken rotated = refreshTokenService.rotate(refreshToken);
         User user = rotated.getUser();
 
-        assertCanLogin(user);   // وضعیت ممکن است بین دو درخواست عوض شده باشد
+        // وضعیت ممکن است بین دو درخواست تغییر کرده باشد
+        assertCanLogin(user);
 
         String access = jwtService.generateAccessToken(UserPrincipal.from(user));
         return AuthResponse.of(access, rotated.getToken(),
@@ -165,6 +183,7 @@ public class AuthService {
     @Transactional
     public UserResponse updateProfile(Long userId, UpdateProfileRequest req) {
         User user = requireUser(userId);
+
         user.setFullName(req.fullName().trim());
         user.setPhone(req.phone());
 
@@ -184,7 +203,7 @@ public class AuthService {
         }
 
         user.setPassword(passwordEncoder.encode(req.newPassword()));
-        user.setMustChangePassword(false);     // الزام برطرف شد
+        user.setMustChangePassword(false);
         userRepository.save(user);
 
         refreshTokenService.revokeAllForUser(userId);
@@ -207,9 +226,9 @@ public class AuthService {
         }
     }
 
-    private Role requireRole(String name) {
-        return roleRepository.findByName(name)
-                .orElseThrow(() -> ApiException.badRequest("نقش " + name + " یافت نشد"));
+    private Role requireRoleByCode(String code) {
+        return roleRepository.findByCode(code)
+                .orElseThrow(() -> ApiException.badRequest("نقش پایه " + code + " یافت نشد"));
     }
 
     private User requireUser(Long id) {

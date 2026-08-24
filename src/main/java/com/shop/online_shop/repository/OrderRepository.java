@@ -16,23 +16,31 @@ import java.util.Optional;
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
     @Override
-    @EntityGraph(attributePaths = {"items", "items.seller", "items.product",
-                                   "payment", "user"})
+    @EntityGraph(attributePaths = {"items", "items.seller", "items.seller.sellerProfile",
+                                   "items.product", "payment", "user"})
     Optional<Order> findById(Long id);
 
-    @EntityGraph(attributePaths = {"items", "items.seller", "payment"})
+    @EntityGraph(attributePaths = {"items", "items.seller", "items.seller.sellerProfile",
+                                   "payment", "user"})
     Page<Order> findByUserId(Long userId, Pageable pageable);
 
-    @EntityGraph(attributePaths = {"items", "items.seller", "payment", "user"})
+    @EntityGraph(attributePaths = {"items", "items.seller", "items.seller.sellerProfile",
+                                   "payment", "user"})
+    Page<Order> findByUserIdAndStatus(Long userId, OrderStatus status, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"items", "items.seller", "items.seller.sellerProfile",
+                                   "payment", "user"})
     Page<Order> findByStatus(OrderStatus status, Pageable pageable);
 
     @Override
-    @EntityGraph(attributePaths = {"items", "items.seller", "payment", "user"})
+    @EntityGraph(attributePaths = {"items", "items.seller", "items.seller.sellerProfile",
+                                   "payment", "user"})
     Page<Order> findAll(Pageable pageable);
 
     /** سفارش‌هایی که مهلت پرداختشان گذشته — برای زمان‌بند لغو خودکار */
     @EntityGraph(attributePaths = {"items", "items.product"})
-    @Query("SELECT o FROM Order o WHERE o.status = com.shop.online_shop.entity.OrderStatus.PENDING_PAYMENT " +
-           "AND o.paymentDeadline < :now")
+    @Query("SELECT o FROM Order o "
+         + "WHERE o.status = com.shop.online_shop.entity.OrderStatus.PENDING_PAYMENT "
+         + "AND o.paymentDeadline < :now")
     List<Order> findExpiredUnpaid(@Param("now") Instant now);
 }

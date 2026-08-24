@@ -13,13 +13,22 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
 
     Optional<RefreshToken> findByToken(String token);
 
-    /** باطل کردن همه توکن‌های یک کاربر — برای logout از همه دستگاه‌ها */
-    @Modifying
-    @Query("UPDATE RefreshToken r SET r.revoked = true WHERE r.user.id = :userId AND r.revoked = false")
+    /**
+     * ابطال همه توکن‌های یک کاربر — هنگام خروج، تغییر رمز،
+     * تغییر نقش یا تغییر مجوزهای نقش.
+     *
+     * clearAutomatically و flushAutomatically لازم‌اند تا نتیجه این
+     * به‌روزرسانی بلافاصله در persistence context هم دیده شود؛
+     * بدون آن‌ها، توکنی که پیش‌تر در همان تراکنش خوانده شده
+     * همچنان معتبر به نظر می‌رسد.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE RefreshToken r SET r.revoked = true "
+         + "WHERE r.user.id = :userId AND r.revoked = false")
     int revokeAllByUserId(@Param("userId") Long userId);
 
-    /** پاکسازی توکن‌های منقضی */
-    @Modifying
+    /** پاکسازی توکن‌های منقضی توسط زمان‌بند */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM RefreshToken r WHERE r.expiresAt < :now")
     int deleteExpired(@Param("now") Instant now);
 }

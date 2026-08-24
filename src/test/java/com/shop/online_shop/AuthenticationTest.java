@@ -1,5 +1,6 @@
 package com.shop.online_shop;
 
+import com.shop.online_shop.entity.RoleCode;
 import com.shop.online_shop.entity.User;
 import com.shop.online_shop.entity.UserStatus;
 import org.junit.jupiter.api.DisplayName;
@@ -21,13 +22,16 @@ class AuthenticationTest extends BaseIntegrationTest {
     private static final String REGISTER = "/api/v1/auth/register";
     private static final String LOGIN = "/api/v1/auth/login";
     private static final String ME = "/api/v1/auth/me";
+    private static final String CHANGE_PASSWORD = "/api/v1/auth/me/password";
+
+    // ==================== ثبت‌نام ====================
 
     @Nested
     @DisplayName("ثبت‌نام")
     class Registration {
 
         @Test
-        @DisplayName("مشتری جدید با نقش USER و وضعیت فعال ساخته می‌شود")
+        @DisplayName("مشتری جدید با نقش پایه و وضعیت فعال ساخته می‌شود")
         void registersCustomer() throws Exception {
             String body = json(Map.of(
                     "email", "newbie@test.local",
@@ -41,12 +45,16 @@ class AuthenticationTest extends BaseIntegrationTest {
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.accessToken").isNotEmpty())
                     .andExpect(jsonPath("$.refreshToken").isNotEmpty())
-                    .andExpect(jsonPath("$.user.role").value("USER"))
+                    .andExpect(jsonPath("$.user.role").isNotEmpty())
                     .andExpect(jsonPath("$.user.status").value("ACTIVE"));
+
+            // نقش با کد بررسی می‌شود، چون نام آن قابل ویرایش است
+            User saved = userRepository.findByEmail("newbie@test.local").orElseThrow();
+            assertThat(saved.getRole().getCode()).isEqualTo(RoleCode.USER);
         }
 
         @Test
-        @DisplayName("رمز در دیتابیس هش می‌شود")
+        @DisplayName("رمز در پایگاه داده هش می‌شود")
         void hashesPassword() throws Exception {
             String rawPassword = "Secret@123";
 
@@ -111,7 +119,30 @@ class AuthenticationTest extends BaseIntegrationTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.details.email").isNotEmpty());
         }
+
+        @Test
+        @DisplayName("ثبت‌نام فروشنده حساب در انتظار می‌سازد و توکن نمی‌دهد")
+        void sellerRegistrationStaysPending() throws Exception {
+            String body = json(Map.of(
+                    "email", "newseller@test.local",
+                    "password", "Secret@123",
+                    "fullName", "فروشنده تازه",
+                    "phone", "09121234567",
+                    "shopName", "فروشگاه تازه",
+                    "landline", "02188776655"));
+
+            mockMvc.perform(post("/api/v1/auth/register/seller")
+                            .contentType("application/json")
+                            .content(body))
+                    .andExpect(status().isCreated());
+
+            User saved = userRepository.findByEmail("newseller@test.local").orElseThrow();
+            assertThat(saved.getStatus()).isEqualTo(UserStatus.PENDING);
+            assertThat(saved.needsSellerApproval()).isTrue();
+        }
     }
+
+    // ==================== ورود ====================
 
     @Nested
     @DisplayName("ورود")
@@ -127,7 +158,8 @@ class AuthenticationTest extends BaseIntegrationTest {
                                     "password", DEFAULT_PASSWORD))))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.accessToken").isNotEmpty())
-                    .andExpect(jsonPath("$.user.role").value("USER"));
+                    .andExpect(jsonPath("$.user.role").isNotEmpty())
+                    .andExpect(jsonPath("$.user.permissions").isArray());
         }
 
         @Test
@@ -142,7 +174,7 @@ class AuthenticationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("ایمیل ناموجود همان ۴۰۱ می‌دهد — نه ۴۰۴")
+        @DisplayName("ایمیل ناموجود همان ۴۰۱ می‌دهد نه ۴۰۴")
         void failsWithUnknownEmail() throws Exception {
             mockMvc.perform(post(LOGIN)
                             .contentType("application/json")
@@ -156,7 +188,7 @@ class AuthenticationTest extends BaseIntegrationTest {
         @DisplayName("فروشنده در انتظار تأیید نمی‌تواند وارد شود")
         void blocksPendingSeller() throws Exception {
             User pending = createUser("pending@test.local", "در انتظار",
-                    "SELLER", UserStatus.PENDING);
+                    RoleCode.SELLER, UserStatus.PENDING);
 
             mockMvc.perform(post(LOGIN)
                             .contentType("application/json")
@@ -170,7 +202,7 @@ class AuthenticationTest extends BaseIntegrationTest {
         @DisplayName("حساب تعلیق‌شده نمی‌تواند وارد شود")
         void blocksSuspendedUser() throws Exception {
             User suspended = createUser("suspended@test.local", "تعلیق",
-                    "SELLER", UserStatus.SUSPENDED);
+                    RoleCode.SELLER, UserStatus.SUSPENDED);
 
             mockMvc.perform(post(LOGIN)
                             .contentType("application/json")
@@ -180,6 +212,8 @@ class AuthenticationTest extends BaseIntegrationTest {
                     .andExpect(status().isForbidden());
         }
     }
+
+    // ==================== توکن ====================
 
     @Nested
     @DisplayName("توکن")
@@ -191,12 +225,12 @@ class AuthenticationTest extends BaseIntegrationTest {
             mockMvc.perform(get(ME).header("Authorization", bearerFor(customer)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.email").value(customer.getEmail()))
-                    .andExpect(jsonPath("$.role").value("USER"))
+                    .andExpect(jsonPath("$.role").isNotEmpty())
                     .andExpect(jsonPath("$.permissions").isArray());
         }
 
         @Test
-        @DisplayName("پاسخ /me رمز عبور را افشا نمی‌کند")
+        @DisplayName("پاسخ کاربر جاری رمز عبور را افشا نمی‌کند")
         void neverExposesPassword() throws Exception {
             mockMvc.perform(get(ME).header("Authorization", bearerFor(customer)))
                     .andExpect(status().isOk())
@@ -230,6 +264,8 @@ class AuthenticationTest extends BaseIntegrationTest {
         }
     }
 
+    // ==================== پروفایل ====================
+
     @Nested
     @DisplayName("پروفایل")
     class Profile {
@@ -237,7 +273,7 @@ class AuthenticationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("تغییر رمز با رمز فعلی درست انجام می‌شود")
         void changesPassword() throws Exception {
-            mockMvc.perform(patch("/api/v1/auth/me/password")
+            mockMvc.perform(post(CHANGE_PASSWORD)
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(json(Map.of(
@@ -246,13 +282,14 @@ class AuthenticationTest extends BaseIntegrationTest {
                     .andExpect(status().isNoContent());
 
             User updated = userRepository.findById(customer.getId()).orElseThrow();
-            assertThat(passwordEncoder.matches("BrandNew@456", updated.getPassword())).isTrue();
+            assertThat(passwordEncoder.matches("BrandNew@456", updated.getPassword()))
+                    .isTrue();
         }
 
         @Test
         @DisplayName("رمز فعلی اشتباه، تغییر را رد می‌کند")
         void rejectsWrongCurrentPassword() throws Exception {
-            mockMvc.perform(patch("/api/v1/auth/me/password")
+            mockMvc.perform(post(CHANGE_PASSWORD)
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(json(Map.of(
@@ -264,7 +301,7 @@ class AuthenticationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("رمز جدید نباید با رمز فعلی یکسان باشد")
         void rejectsSamePassword() throws Exception {
-            mockMvc.perform(patch("/api/v1/auth/me/password")
+            mockMvc.perform(post(CHANGE_PASSWORD)
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(json(Map.of(

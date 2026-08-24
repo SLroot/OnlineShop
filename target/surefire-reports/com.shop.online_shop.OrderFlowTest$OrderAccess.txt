@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.shop.online_shop.OrderFlowTest$OrderAccess
 -------------------------------------------------------------------------------
-Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.591 s -- in com.shop.online_shop.OrderFlowTest$OrderAccess
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.242 s -- in com.shop.online_shop.OrderFlowTest$OrderAccess

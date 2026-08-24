@@ -11,13 +11,31 @@ import java.util.Optional;
 
 public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
 
-    @EntityGraph(attributePaths = {"order", "order.user", "product"})
+    @EntityGraph(attributePaths = {"order", "order.user", "product", "seller",
+                                   "seller.sellerProfile"})
     Page<OrderItem> findBySellerId(Long sellerId, Pageable pageable);
 
-    @EntityGraph(attributePaths = {"order", "order.user", "product"})
+    @EntityGraph(attributePaths = {"order", "order.user", "product", "seller",
+                                   "seller.sellerProfile"})
     Page<OrderItem> findBySellerIdAndStatus(Long sellerId, OrderItemStatus status,
                                             Pageable pageable);
 
-    @EntityGraph(attributePaths = {"order", "order.user", "product"})
+    @EntityGraph(attributePaths = {"order", "order.user", "product", "seller",
+                                   "seller.sellerProfile"})
+    Page<OrderItem> findByStatus(OrderItemStatus status, Pageable pageable);
+
+    @Override
+    @EntityGraph(attributePaths = {"order", "order.user", "product", "seller",
+                                   "seller.sellerProfile"})
+    Page<OrderItem> findAll(Pageable pageable);
+
+    @Override
+    @EntityGraph(attributePaths = {"order", "order.user", "product", "seller",
+                                   "seller.sellerProfile"})
+    Optional<OrderItem> findById(Long id);
+
+    /** مالکیت در خود کوئری شرط می‌شود تا قلم دیگران اصلاً یافت نشود */
+    @EntityGraph(attributePaths = {"order", "order.user", "product", "seller",
+                                   "seller.sellerProfile"})
     Optional<OrderItem> findByIdAndSellerId(Long id, Long sellerId);
 }

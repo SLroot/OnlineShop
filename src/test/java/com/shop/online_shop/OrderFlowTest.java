@@ -1,7 +1,22 @@
 package com.shop.online_shop;
 
-import com.shop.online_shop.entity.*;
-import com.shop.online_shop.repository.*;
+import com.shop.online_shop.entity.Address;
+import com.shop.online_shop.entity.Cart;
+import com.shop.online_shop.entity.Category;
+import com.shop.online_shop.entity.Order;
+import com.shop.online_shop.entity.OrderItem;
+import com.shop.online_shop.entity.OrderStatus;
+import com.shop.online_shop.entity.Payment;
+import com.shop.online_shop.entity.Product;
+import com.shop.online_shop.entity.RoleCode;
+import com.shop.online_shop.entity.User;
+import com.shop.online_shop.entity.UserStatus;
+import com.shop.online_shop.repository.AddressRepository;
+import com.shop.online_shop.repository.CartRepository;
+import com.shop.online_shop.repository.CategoryRepository;
+import com.shop.online_shop.repository.OrderRepository;
+import com.shop.online_shop.repository.PaymentRepository;
+import com.shop.online_shop.repository.ProductRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -12,7 +27,10 @@ import java.math.BigDecimal;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -25,6 +43,11 @@ class OrderFlowTest extends BaseIntegrationTest {
     @Autowired OrderRepository orderRepository;
     @Autowired PaymentRepository paymentRepository;
     @Autowired AddressRepository addressRepository;
+
+    private static final String PRODUCTS = "/api/v1/products";
+    private static final String CARTS = "/api/v1/carts/me";
+    private static final String ORDERS = "/api/v1/orders";
+    private static final String ORDER_ITEMS = "/api/v1/order-items";
 
     private static final int INITIAL_STOCK = 10;
     private static final BigDecimal PRICE = new BigDecimal("1000000");
@@ -72,8 +95,7 @@ class OrderFlowTest extends BaseIntegrationTest {
         @Test
         @DisplayName("سبد خالی پیام مناسب دارد")
         void emptyCartHasMessage() throws Exception {
-            mockMvc.perform(get("/api/v1/carts/me")
-                            .header("Authorization", bearerFor(customer)))
+            mockMvc.perform(get(CARTS).header("Authorization", bearerFor(customer)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.empty").value(true))
                     .andExpect(jsonPath("$.message").isNotEmpty());
@@ -85,8 +107,7 @@ class OrderFlowTest extends BaseIntegrationTest {
             addToCart(product.getId(), 2);
             addToCart(product.getId(), 3);
 
-            mockMvc.perform(get("/api/v1/carts/me")
-                            .header("Authorization", bearerFor(customer)))
+            mockMvc.perform(get(CARTS).header("Authorization", bearerFor(customer)))
                     .andExpect(jsonPath("$.itemCount").value(1))
                     .andExpect(jsonPath("$.totalQuantity").value(5));
         }
@@ -94,7 +115,7 @@ class OrderFlowTest extends BaseIntegrationTest {
         @Test
         @DisplayName("تعداد بیش از موجودی، به موجودی محدود می‌شود")
         void quantityIsCappedToStock() throws Exception {
-            mockMvc.perform(post("/api/v1/carts/me/items")
+            mockMvc.perform(post(CARTS + "/items")
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(json(Map.of(
@@ -110,12 +131,11 @@ class OrderFlowTest extends BaseIntegrationTest {
         void deactivatedProductLeavesCart() throws Exception {
             addToCart(product.getId(), 2);
 
-            mockMvc.perform(delete("/api/v1/seller/products/" + product.getId())
+            mockMvc.perform(delete(PRODUCTS + "/" + product.getId())
                             .header("Authorization", bearerFor(seller)))
                     .andExpect(status().isNoContent());
 
-            mockMvc.perform(get("/api/v1/carts/me")
-                            .header("Authorization", bearerFor(customer)))
+            mockMvc.perform(get(CARTS).header("Authorization", bearerFor(customer)))
                     .andExpect(jsonPath("$.empty").value(true));
         }
 
@@ -126,6 +146,17 @@ class OrderFlowTest extends BaseIntegrationTest {
 
             Product fresh = productRepository.findById(product.getId()).orElseThrow();
             assertThat(fresh.getStock()).isEqualTo(INITIAL_STOCK);
+        }
+
+        @Test
+        @DisplayName("مدیر می‌تواند سبد یک کاربر را ببیند")
+        void managerCanViewUserCart() throws Exception {
+            addToCart(product.getId(), 2);
+
+            mockMvc.perform(get("/api/v1/carts/users/" + customer.getId())
+                            .header("Authorization", bearerFor(manager)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.itemCount").value(1));
         }
     }
 
@@ -151,8 +182,7 @@ class OrderFlowTest extends BaseIntegrationTest {
             addToCart(product.getId(), 2);
             placeOrder();
 
-            mockMvc.perform(get("/api/v1/carts/me")
-                            .header("Authorization", bearerFor(customer)))
+            mockMvc.perform(get(CARTS).header("Authorization", bearerFor(customer)))
                     .andExpect(jsonPath("$.empty").value(true));
         }
 
@@ -161,7 +191,7 @@ class OrderFlowTest extends BaseIntegrationTest {
         void orderStartsPendingPayment() throws Exception {
             addToCart(product.getId(), 1);
 
-            mockMvc.perform(post("/api/v1/orders")
+            mockMvc.perform(post(ORDERS)
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(json(Map.of("addressId", address.getId()))))
@@ -203,7 +233,7 @@ class OrderFlowTest extends BaseIntegrationTest {
         @Test
         @DisplayName("سبد خالی، سفارش نمی‌سازد")
         void emptyCartCannotOrder() throws Exception {
-            mockMvc.perform(post("/api/v1/orders")
+            mockMvc.perform(post(ORDERS)
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(json(Map.of("addressId", address.getId()))))
@@ -213,7 +243,7 @@ class OrderFlowTest extends BaseIntegrationTest {
         @Test
         @DisplayName("فروشنده نمی‌تواند سفارش ثبت کند")
         void sellerCannotPlaceOrder() throws Exception {
-            mockMvc.perform(post("/api/v1/orders")
+            mockMvc.perform(post(ORDERS)
                             .header("Authorization", bearerFor(seller))
                             .contentType("application/json")
                             .content(json(Map.of("addressId", address.getId()))))
@@ -233,7 +263,7 @@ class OrderFlowTest extends BaseIntegrationTest {
             addToCart(product.getId(), 1);
             Long orderId = placeOrder();
 
-            mockMvc.perform(post("/api/v1/orders/" + orderId + "/payment")
+            mockMvc.perform(post(ORDERS + "/" + orderId + "/payment")
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(json(Map.of("simulateSuccess", true))))
@@ -241,7 +271,7 @@ class OrderFlowTest extends BaseIntegrationTest {
                     .andExpect(jsonPath("$.status").value("SUCCESS"))
                     .andExpect(jsonPath("$.transactionRef").isNotEmpty());
 
-            mockMvc.perform(get("/api/v1/orders/" + orderId)
+            mockMvc.perform(get(ORDERS + "/" + orderId)
                             .header("Authorization", bearerFor(customer)))
                     .andExpect(jsonPath("$.status").value("PAID"))
                     .andExpect(jsonPath("$.items[0].status").value("PAID"));
@@ -253,13 +283,13 @@ class OrderFlowTest extends BaseIntegrationTest {
             addToCart(product.getId(), 1);
             Long orderId = placeOrder();
 
-            mockMvc.perform(post("/api/v1/orders/" + orderId + "/payment")
+            mockMvc.perform(post(ORDERS + "/" + orderId + "/payment")
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(json(Map.of("simulateSuccess", false))))
                     .andExpect(status().isBadRequest());
 
-            mockMvc.perform(get("/api/v1/orders/" + orderId)
+            mockMvc.perform(get(ORDERS + "/" + orderId)
                             .header("Authorization", bearerFor(customer)))
                     .andExpect(jsonPath("$.status").value("PENDING_PAYMENT"));
         }
@@ -271,11 +301,32 @@ class OrderFlowTest extends BaseIntegrationTest {
             Long orderId = placeOrder();
             pay(orderId);
 
-            mockMvc.perform(post("/api/v1/orders/" + orderId + "/payment")
+            mockMvc.perform(post(ORDERS + "/" + orderId + "/payment")
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(json(Map.of("simulateSuccess", true))))
                     .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("مدیر فهرست همه پرداخت‌ها را می‌بیند")
+        void managerSeesAllPayments() throws Exception {
+            addToCart(product.getId(), 1);
+            Long orderId = placeOrder();
+            pay(orderId);
+
+            mockMvc.perform(get("/api/v1/payments")
+                            .header("Authorization", bearerFor(manager)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content").isArray());
+        }
+
+        @Test
+        @DisplayName("مشتری نمی‌تواند فهرست همه پرداخت‌ها را ببیند")
+        void customerCannotSeeAllPayments() throws Exception {
+            mockMvc.perform(get("/api/v1/payments")
+                            .header("Authorization", bearerFor(customer)))
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -290,7 +341,7 @@ class OrderFlowTest extends BaseIntegrationTest {
         void sellerAdvancesStatus() throws Exception {
             Long itemId = paidOrderItem();
 
-            mockMvc.perform(patch("/api/v1/seller/orders/items/" + itemId + "/status")
+            mockMvc.perform(patch(ORDER_ITEMS + "/" + itemId + "/status")
                             .header("Authorization", bearerFor(seller))
                             .contentType("application/json")
                             .content(json(Map.of("status", "PROCESSING"))))
@@ -299,11 +350,40 @@ class OrderFlowTest extends BaseIntegrationTest {
         }
 
         @Test
+        @DisplayName("فروشنده تنها اقلام خودش را در فهرست می‌بیند")
+        void sellerSeesOnlyOwnItems() throws Exception {
+            paidOrderItem();
+
+            mockMvc.perform(get(ORDER_ITEMS)
+                            .header("Authorization", bearerFor(seller)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1));
+        }
+
+        @Test
+        @DisplayName("مدیر اقلام همه فروشندگان را می‌بیند")
+        void managerSeesAllItems() throws Exception {
+            paidOrderItem();
+
+            mockMvc.perform(get(ORDER_ITEMS + "?scope=all")
+                            .header("Authorization", bearerFor(manager)))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("فروشنده نمی‌تواند دامنه all را ببیند")
+        void sellerCannotUseAllScopeOnItems() throws Exception {
+            mockMvc.perform(get(ORDER_ITEMS + "?scope=all")
+                            .header("Authorization", bearerFor(seller)))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
         @DisplayName("پرش از مراحل مجاز نیست")
         void cannotSkipStages() throws Exception {
             Long itemId = paidOrderItem();
 
-            mockMvc.perform(patch("/api/v1/seller/orders/items/" + itemId + "/status")
+            mockMvc.perform(patch(ORDER_ITEMS + "/" + itemId + "/status")
                             .header("Authorization", bearerFor(seller))
                             .contentType("application/json")
                             .content(json(Map.of("status", "SHIPPED"))))
@@ -317,7 +397,7 @@ class OrderFlowTest extends BaseIntegrationTest {
             advance(itemId, "PROCESSING");
             advance(itemId, "SHIPPED");
 
-            mockMvc.perform(patch("/api/v1/seller/orders/items/" + itemId + "/status")
+            mockMvc.perform(patch(ORDER_ITEMS + "/" + itemId + "/status")
                             .header("Authorization", bearerFor(seller))
                             .contentType("application/json")
                             .content(json(Map.of("status", "PROCESSING"))))
@@ -331,7 +411,7 @@ class OrderFlowTest extends BaseIntegrationTest {
             Long orderId = placeOrder();
             Long itemId = firstItemId(orderId);
 
-            mockMvc.perform(patch("/api/v1/seller/orders/items/" + itemId + "/status")
+            mockMvc.perform(patch(ORDER_ITEMS + "/" + itemId + "/status")
                             .header("Authorization", bearerFor(seller))
                             .contentType("application/json")
                             .content(json(Map.of("status", "PROCESSING"))))
@@ -344,9 +424,9 @@ class OrderFlowTest extends BaseIntegrationTest {
             Long itemId = paidOrderItem();
 
             User otherSeller = createUser("seller9@test.local", "فروشنده دیگر",
-                    "SELLER", UserStatus.ACTIVE);
+                    RoleCode.SELLER, UserStatus.ACTIVE);
 
-            mockMvc.perform(patch("/api/v1/seller/orders/items/" + itemId + "/status")
+            mockMvc.perform(patch(ORDER_ITEMS + "/" + itemId + "/status")
                             .header("Authorization", bearerFor(otherSeller))
                             .contentType("application/json")
                             .content(json(Map.of("status", "PROCESSING"))))
@@ -400,7 +480,7 @@ class OrderFlowTest extends BaseIntegrationTest {
             advance(itemId, "PROCESSING");
             advance(itemId, "SHIPPED");
 
-            mockMvc.perform(patch("/api/v1/orders/" + orderId + "/cancel")
+            mockMvc.perform(patch(ORDERS + "/" + orderId + "/cancel")
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(json(Map.of("reason", "پشیمان شدم"))))
@@ -419,7 +499,7 @@ class OrderFlowTest extends BaseIntegrationTest {
 
             Long itemId = firstItemId(orderId);
 
-            mockMvc.perform(patch("/api/v1/seller/orders/items/" + itemId + "/cancel")
+            mockMvc.perform(patch(ORDER_ITEMS + "/" + itemId + "/cancel")
                             .header("Authorization", bearerFor(seller))
                             .contentType("application/json")
                             .content(json(Map.of("reason", "کالا آسیب دیده"))))
@@ -432,7 +512,7 @@ class OrderFlowTest extends BaseIntegrationTest {
         }
     }
 
-    // ==================== دسترسی به سفارش ====================
+    // ==================== دسترسی و شکل پاسخ ====================
 
     @Nested
     @DisplayName("دسترسی به سفارش")
@@ -445,11 +525,23 @@ class OrderFlowTest extends BaseIntegrationTest {
             Long orderId = placeOrder();
 
             User otherCustomer = createUser("buyer2@test.local", "خریدار دوم",
-                    "USER", UserStatus.ACTIVE);
+                    RoleCode.USER, UserStatus.ACTIVE);
 
-            mockMvc.perform(get("/api/v1/orders/" + orderId)
+            mockMvc.perform(get(ORDERS + "/" + orderId)
                             .header("Authorization", bearerFor(otherCustomer)))
                     .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("مشتری بخش اطلاعات مشتری را در پاسخ نمی‌بیند")
+        void customerDoesNotSeeCustomerBlock() throws Exception {
+            addToCart(product.getId(), 1);
+            Long orderId = placeOrder();
+
+            mockMvc.perform(get(ORDERS + "/" + orderId)
+                            .header("Authorization", bearerFor(customer)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.customer").doesNotExist());
         }
 
         @Test
@@ -458,21 +550,43 @@ class OrderFlowTest extends BaseIntegrationTest {
             addToCart(product.getId(), 1);
             Long orderId = placeOrder();
 
-            mockMvc.perform(get("/api/v1/orders/" + orderId)
+            mockMvc.perform(get(ORDERS + "/" + orderId)
                             .header("Authorization", bearerFor(manager)))
-                    .andExpect(status().isOk());
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.customer").isNotEmpty());
 
-            mockMvc.perform(get("/api/v1/admin/orders")
+            mockMvc.perform(get(ORDERS + "?scope=all")
                             .header("Authorization", bearerFor(manager)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content[0].customer").isNotEmpty());
+        }
+
+        @Test
+        @DisplayName("مشتری نمی‌تواند دامنه all را ببیند")
+        void customerCannotUseAllScope() throws Exception {
+            mockMvc.perform(get(ORDERS + "?scope=all")
+                            .header("Authorization", bearerFor(customer)))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("پاسخ سفارش، ایمیل فروشنده را افشا نمی‌کند")
+        void sellerContactIsNotExposed() throws Exception {
+            addToCart(product.getId(), 1);
+            Long orderId = placeOrder();
+
+            mockMvc.perform(get(ORDERS + "/" + orderId)
+                            .header("Authorization", bearerFor(customer)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.items[0].seller.shopName").exists())
+                    .andExpect(jsonPath("$.items[0].seller.email").doesNotExist());
         }
     }
 
     // ==================== کمکی ====================
 
     private void addToCart(Long productId, int quantity) throws Exception {
-        mockMvc.perform(post("/api/v1/carts/me/items")
+        mockMvc.perform(post(CARTS + "/items")
                         .header("Authorization", bearerFor(customer))
                         .contentType("application/json")
                         .content(json(Map.of(
@@ -482,7 +596,7 @@ class OrderFlowTest extends BaseIntegrationTest {
     }
 
     private Long placeOrder() throws Exception {
-        String response = mockMvc.perform(post("/api/v1/orders")
+        String response = mockMvc.perform(post(ORDERS)
                         .header("Authorization", bearerFor(customer))
                         .contentType("application/json")
                         .content(json(Map.of("addressId", address.getId()))))
@@ -493,7 +607,7 @@ class OrderFlowTest extends BaseIntegrationTest {
     }
 
     private void pay(Long orderId) throws Exception {
-        mockMvc.perform(post("/api/v1/orders/" + orderId + "/payment")
+        mockMvc.perform(post(ORDERS + "/" + orderId + "/payment")
                         .header("Authorization", bearerFor(customer))
                         .contentType("application/json")
                         .content(json(Map.of("simulateSuccess", true))))
@@ -501,7 +615,7 @@ class OrderFlowTest extends BaseIntegrationTest {
     }
 
     private void cancel(Long orderId) throws Exception {
-        mockMvc.perform(patch("/api/v1/orders/" + orderId + "/cancel")
+        mockMvc.perform(patch(ORDERS + "/" + orderId + "/cancel")
                         .header("Authorization", bearerFor(customer))
                         .contentType("application/json")
                         .content(json(Map.of("reason", "تست لغو"))))
@@ -509,7 +623,7 @@ class OrderFlowTest extends BaseIntegrationTest {
     }
 
     private void advance(Long itemId, String status) throws Exception {
-        mockMvc.perform(patch("/api/v1/seller/orders/items/" + itemId + "/status")
+        mockMvc.perform(patch(ORDER_ITEMS + "/" + itemId + "/status")
                         .header("Authorization", bearerFor(seller))
                         .contentType("application/json")
                         .content(json(Map.of("status", status))))
@@ -521,7 +635,7 @@ class OrderFlowTest extends BaseIntegrationTest {
                 .getItems().get(0).getId();
     }
 
-    /** سفارش پرداخت‌شده می‌سازد و شناسه اولین قلمش را برمی‌گرداند */
+    /** سفارش پرداخت‌شده می‌سازد و شناسه نخستین قلمش را برمی‌گرداند */
     private Long paidOrderItem() throws Exception {
         addToCart(product.getId(), 1);
         Long orderId = placeOrder();

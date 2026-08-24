@@ -4,12 +4,14 @@ import com.shop.online_shop.dto.request.ProductRequest;
 import com.shop.online_shop.entity.Category;
 import com.shop.online_shop.entity.Product;
 import com.shop.online_shop.entity.ProductImage;
+import com.shop.online_shop.entity.RoleCode;
 import com.shop.online_shop.entity.User;
 import com.shop.online_shop.exception.ApiException;
 import com.shop.online_shop.repository.ProductImageRepository;
 import com.shop.online_shop.repository.ProductRepository;
 import com.shop.online_shop.repository.UserRepository;
 import com.shop.online_shop.security.AccessGuard;
+import com.shop.online_shop.security.Scope;
 import com.shop.online_shop.security.UserPrincipal;
 import com.shop.online_shop.spec.ProductSpecifications;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +30,7 @@ import java.util.Set;
 public class ProductService {
 
     private static final String MANAGE_ALL = "PRODUCT_MANAGE_ALL";
-    private static final String SELLER_ROLE = "SELLER";
+    private static final String READ_OWN = "PRODUCT_READ_OWN";
 
     private final ProductRepository productRepository;
     private final ProductImageRepository imageRepository;
@@ -39,48 +41,73 @@ public class ProductService {
     private final CartService cartService;
     private final AccessGuard accessGuard;
 
-    // ==================== خواندن عمومی ====================
-
-    @Transactional(readOnly = true)
-    public Page<Product> search(String keyword, Long categoryId,
+    /** فیلترهای مشترک همه دامنه‌ها */
+    public record ProductFilter(String keyword, Long categoryId,
                                 BigDecimal minPrice, BigDecimal maxPrice,
-                                Boolean inStockOnly, Pageable pageable) {
+                                Boolean inStockOnly, Long sellerId) {
+    }
 
-        Set<Long> categoryIds = categoryId != null
-                ? categoryService.collectDescendantIds(categoryId)
+    // ==================== فهرست ====================
+
+    /**
+     * یک نقطه ورود برای هر سه دامنه دید.
+     * دامنه تعیین می‌کند چه چیزی دیده شود و چه مجوزی لازم است.
+     */
+    @Transactional(readOnly = true)
+    public Page<Product> list(Scope scope, ProductFilter filter,
+                              UserPrincipal me, Pageable pageable) {
+
+        Set<Long> categoryIds = filter.categoryId() != null
+                ? categoryService.collectDescendantIds(filter.categoryId())
                 : null;
 
         Specification<Product> spec = Specification
-                .where(ProductSpecifications.isActive())
-                .and(ProductSpecifications.nameContains(keyword))
+                .where(ProductSpecifications.nameContains(filter.keyword()))
                 .and(ProductSpecifications.inCategories(categoryIds))
-                .and(ProductSpecifications.priceAtLeast(minPrice))
-                .and(ProductSpecifications.priceAtMost(maxPrice))
-                .and(ProductSpecifications.inStockOnly(inStockOnly));
+                .and(ProductSpecifications.priceAtLeast(filter.minPrice()))
+                .and(ProductSpecifications.priceAtMost(filter.maxPrice()))
+                .and(ProductSpecifications.inStockOnly(filter.inStockOnly()));
+
+        spec = switch (scope) {
+
+            // فهرست عمومی — فقط محصولات فعال، بدون نیاز به توکن
+            case PUBLIC -> spec.and(ProductSpecifications.isActive());
+
+            // محصولات خود کاربر — شامل غیرفعال‌ها
+            case MINE -> {
+                accessGuard.requireAuthority(me, READ_OWN);
+                yield spec.and(ProductSpecifications.bySeller(me.getId()));
+            }
+
+            // همه محصولات همه فروشندگان — شامل غیرفعال‌ها
+            case ALL -> {
+                accessGuard.requireAuthority(me, MANAGE_ALL);
+                yield spec.and(ProductSpecifications.bySeller(filter.sellerId()));
+            }
+        };
 
         return productRepository.findAll(spec, pageable);
     }
 
+    /**
+     * جزئیات محصول. محصول غیرفعال تنها برای مالک و مدیر قابل مشاهده است.
+     */
     @Transactional(readOnly = true)
-    public Product getPublicById(Long id) {
-        return productRepository.findByIdAndActiveTrue(id)
+    public Product getById(Long id, UserPrincipal me) {
+        Product product = productRepository.findById(id)
                 .orElseThrow(() -> ApiException.notFound("محصول یافت نشد"));
-    }
 
-    // ==================== لیست مدیریتی ====================
+        if (product.isActive()) {
+            return product;
+        }
 
-    /** محصولات یک فروشنده، شامل غیرفعال‌ها */
-    @Transactional(readOnly = true)
-    public Page<Product> getOwnProducts(Long sellerId, Pageable pageable) {
-        return productRepository.findBySellerId(sellerId, pageable);
-    }
+        boolean isOwner = me != null && product.getSeller().getId().equals(me.getId());
+        boolean canManageAll = accessGuard.has(me, MANAGE_ALL);
 
-    /** برای مدیر: همه محصولات، با فیلتر اختیاری روی فروشنده */
-    @Transactional(readOnly = true)
-    public Page<Product> getAllForManagement(Long sellerId, Pageable pageable) {
-        return sellerId != null
-                ? productRepository.findBySellerId(sellerId, pageable)
-                : productRepository.findAll(pageable);
+        if (!isOwner && !canManageAll) {
+            throw ApiException.notFound("محصول یافت نشد");
+        }
+        return product;
     }
 
     // ==================== نوشتن ====================
@@ -137,7 +164,6 @@ public class ProductService {
         return productRepository.save(product);
     }
 
-    /** غیرفعال‌سازی به جای حذف — محصول از سبد همه کاربران هم حذف می‌شود */
     @Transactional
     public void deactivate(Long productId, UserPrincipal me) {
         Product product = findOrThrow(productId);
@@ -180,7 +206,6 @@ public class ProductService {
 
         String fileName = fileStorageService.store(file);
 
-        // اولین تصویر خودکار اصلی می‌شود
         boolean primary = makePrimary || current == 0;
         if (primary) {
             imageRepository.clearPrimaryFlags(productId);
@@ -212,7 +237,6 @@ public class ProductService {
         product.getImages().remove(image);
         fileStorageService.delete(image.getFileName());
 
-        // اگر تصویر اصلی حذف شد، اولین تصویر باقی‌مانده جایگزین می‌شود
         if (wasPrimary) {
             product.getImages().stream()
                     .findFirst()
@@ -257,26 +281,26 @@ public class ProductService {
 
     /**
      * مالک محصول را تعیین می‌کند.
-     * مدیر می‌تواند sellerId بفرستد تا محصول به نام فروشنده دیگری ثبت شود؛
-     * فروشنده عادی همیشه مالک محصول خودش است حتی اگر sellerId بفرستد.
+     * دارنده مجوز مدیریت سراسری می‌تواند محصول را به نام فروشنده دیگری ثبت کند؛
+     * برای بقیه، مالک همیشه خود فرستنده است.
      */
     private User resolveSeller(Long requestedSellerId, UserPrincipal me) {
-        if (requestedSellerId == null || !me.hasAuthority(MANAGE_ALL)) {
+        if (requestedSellerId == null || !accessGuard.has(me, MANAGE_ALL)) {
             return userRepository.findById(me.getId())
                     .orElseThrow(() -> ApiException.notFound("کاربر یافت نشد"));
         }
 
         User seller = userRepository.findById(requestedSellerId)
                 .orElseThrow(() -> ApiException.badRequest(
-                        "فروشنده با شناسه " + requestedSellerId + " یافت نشد"));
+                        "کاربر با شناسه " + requestedSellerId + " یافت نشد"));
 
-        if (!SELLER_ROLE.equals(seller.getRole().getName())) {
+        // نقش سفارشی فروشنده‌محور هم پذیرفته می‌شود
+        if (!seller.needsSellerApproval()) {
             throw ApiException.badRequest("کاربر انتخاب‌شده فروشنده نیست");
         }
         return seller;
     }
 
-    /** فروشنده فقط روی محصول خودش، مدیر روی همه */
     private void assertCanManage(Product product, UserPrincipal me) {
         accessGuard.assertOwnerOrPrivileged(
                 product.getSeller().getId(), me, MANAGE_ALL,

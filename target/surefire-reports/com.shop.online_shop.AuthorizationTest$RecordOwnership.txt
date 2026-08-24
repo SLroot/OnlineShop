@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.shop.online_shop.AuthorizationTest$RecordOwnership
 -------------------------------------------------------------------------------
-Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.882 s -- in com.shop.online_shop.AuthorizationTest$RecordOwnership
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.313 s -- in com.shop.online_shop.AuthorizationTest$RecordOwnership

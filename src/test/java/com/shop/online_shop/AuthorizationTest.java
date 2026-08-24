@@ -2,9 +2,12 @@ package com.shop.online_shop;
 
 import com.shop.online_shop.entity.Category;
 import com.shop.online_shop.entity.Product;
+import com.shop.online_shop.entity.RoleCode;
 import com.shop.online_shop.entity.User;
+import com.shop.online_shop.entity.UserStatus;
 import com.shop.online_shop.repository.CategoryRepository;
 import com.shop.online_shop.repository.ProductRepository;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -12,9 +15,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -24,7 +31,12 @@ class AuthorizationTest extends BaseIntegrationTest {
     @Autowired CategoryRepository categoryRepository;
     @Autowired ProductRepository productRepository;
 
-    private Category leafCategory;
+    private static final String PRODUCTS = "/api/v1/products";
+    private static final String CATEGORIES = "/api/v1/categories";
+    private static final String ADDRESSES = "/api/v1/addresses";
+    private static final String ROLES = "/api/v1/roles";
+
+    private Category leaf;
     private Product sellerProduct;
     private User otherSeller;
 
@@ -33,7 +45,7 @@ class AuthorizationTest extends BaseIntegrationTest {
         Category root = categoryRepository.save(Category.builder()
                 .name("کالای دیجیتال").slug("digital").depth(1).build());
 
-        leafCategory = categoryRepository.save(Category.builder()
+        leaf = categoryRepository.save(Category.builder()
                 .name("لپ‌تاپ").slug("laptop").parent(root).depth(2).build());
 
         sellerProduct = productRepository.save(Product.builder()
@@ -41,39 +53,32 @@ class AuthorizationTest extends BaseIntegrationTest {
                 .name("لپ‌تاپ ایسوس")
                 .price(new BigDecimal("50000000"))
                 .stock(10)
-                .category(leafCategory)
+                .category(leaf)
                 .seller(seller)
                 .active(true)
                 .build());
 
         otherSeller = createUser("seller2@test.local", "فروشنده دوم",
-                "SELLER", com.shop.online_shop.entity.UserStatus.ACTIVE);
+                RoleCode.SELLER, UserStatus.ACTIVE);
     }
 
-    // ==================== بدون توکن ====================
+    // ==================== بدون احراز هویت ====================
 
     @Nested
     @DisplayName("بدون احراز هویت")
     class Anonymous {
 
         @Test
-        @DisplayName("مشاهده محصولات آزاد است")
-        void canBrowseProducts() throws Exception {
-            mockMvc.perform(get("/api/v1/products"))
-                    .andExpect(status().isOk());
-        }
-
-        @Test
-        @DisplayName("مشاهده دسته‌بندی‌ها آزاد است")
-        void canBrowseCategories() throws Exception {
-            mockMvc.perform(get("/api/v1/categories"))
-                    .andExpect(status().isOk());
+        @DisplayName("مشاهده کاتالوگ آزاد است")
+        void canBrowseCatalog() throws Exception {
+            mockMvc.perform(get(PRODUCTS)).andExpect(status().isOk());
+            mockMvc.perform(get(CATEGORIES)).andExpect(status().isOk());
         }
 
         @Test
         @DisplayName("ساخت محصول ۴۰۱ می‌دهد")
         void cannotCreateProduct() throws Exception {
-            mockMvc.perform(post("/api/v1/seller/products")
+            mockMvc.perform(post(PRODUCTS)
                             .contentType("application/json")
                             .content(productBody("SKU-NEW")))
                     .andExpect(status().isUnauthorized());
@@ -87,14 +92,111 @@ class AuthorizationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("پنل ادمین ۴۰۱ می‌دهد")
-        void cannotAccessAdminPanel() throws Exception {
-            mockMvc.perform(get("/api/v1/admin/roles"))
+        @DisplayName("مدیریت نقش‌ها ۴۰۱ می‌دهد")
+        void cannotAccessRoles() throws Exception {
+            mockMvc.perform(get(ROLES))
                     .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("خطای ۴۰۱ ساختار استاندارد پاسخ را دارد")
+        void unauthorizedFollowsErrorSchema() throws Exception {
+            mockMvc.perform(get("/api/v1/auth/me"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.status").value(401))
+                    .andExpect(jsonPath("$.error").isNotEmpty())
+                    .andExpect(jsonPath("$.timestamp").isNotEmpty());
         }
     }
 
-    // ==================== نقش اشتباه ====================
+    // ==================== دامنه دید ====================
+
+    @Nested
+    @DisplayName("دامنه دید محصولات")
+    class ProductScope {
+
+        @Test
+        @DisplayName("دامنه عمومی برای همه باز است")
+        void publicScopeIsOpen() throws Exception {
+            mockMvc.perform(get(PRODUCTS + "?scope=public"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("فروشنده محصولات خودش را می‌بیند")
+        void sellerCanSeeOwnProducts() throws Exception {
+            mockMvc.perform(get(PRODUCTS + "?scope=mine")
+                            .header("Authorization", bearerFor(seller)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content[0].seller.id").value(seller.getId()));
+        }
+
+        @Test
+        @DisplayName("مشتری بدون مجوز نمی‌تواند دامنه mine را ببیند")
+        void customerCannotUseMineScope() throws Exception {
+            mockMvc.perform(get(PRODUCTS + "?scope=mine")
+                            .header("Authorization", bearerFor(customer)))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.error")
+                            .value(Matchers.containsString("PRODUCT_READ_OWN")));
+        }
+
+        @Test
+        @DisplayName("مدیر می‌تواند همه محصولات را ببیند")
+        void managerCanUseAllScope() throws Exception {
+            mockMvc.perform(get(PRODUCTS + "?scope=all")
+                            .header("Authorization", bearerFor(manager)))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("فروشنده نمی‌تواند دامنه all را ببیند")
+        void sellerCannotUseAllScope() throws Exception {
+            mockMvc.perform(get(PRODUCTS + "?scope=all")
+                            .header("Authorization", bearerFor(seller)))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.error")
+                            .value(Matchers.containsString("PRODUCT_MANAGE_ALL")));
+        }
+
+        @Test
+        @DisplayName("دامنه نامعتبر ۴۰۰ می‌دهد")
+        void invalidScopeIsRejected() throws Exception {
+            mockMvc.perform(get(PRODUCTS + "?scope=everything")
+                            .header("Authorization", bearerFor(manager)))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("مدیر می‌تواند محصولات یک فروشنده را فیلتر کند")
+        void managerCanFilterBySeller() throws Exception {
+            mockMvc.perform(get(PRODUCTS + "?scope=all&sellerId=" + seller.getId())
+                            .header("Authorization", bearerFor(manager)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content[0].seller.id").value(seller.getId()));
+        }
+
+        @Test
+        @DisplayName("محصول غیرفعال تنها برای مالک و مدیر دیده می‌شود")
+        void inactiveProductVisibilityDependsOnViewer() throws Exception {
+            mockMvc.perform(delete(PRODUCTS + "/" + sellerProduct.getId())
+                            .header("Authorization", bearerFor(seller)))
+                    .andExpect(status().isNoContent());
+
+            mockMvc.perform(get(PRODUCTS + "/" + sellerProduct.getId()))
+                    .andExpect(status().isNotFound());
+
+            mockMvc.perform(get(PRODUCTS + "/" + sellerProduct.getId())
+                            .header("Authorization", bearerFor(seller)))
+                    .andExpect(status().isOk());
+
+            mockMvc.perform(get(PRODUCTS + "/" + sellerProduct.getId())
+                            .header("Authorization", bearerFor(manager)))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    // ==================== مجوز ناکافی ====================
 
     @Nested
     @DisplayName("مجوز ناکافی")
@@ -103,7 +205,7 @@ class AuthorizationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("مشتری نمی‌تواند محصول بسازد")
         void customerCannotCreateProduct() throws Exception {
-            mockMvc.perform(post("/api/v1/seller/products")
+            mockMvc.perform(post(PRODUCTS)
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(productBody("SKU-NEW")))
@@ -113,7 +215,7 @@ class AuthorizationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("مشتری نمی‌تواند دسته‌بندی بسازد")
         void customerCannotCreateCategory() throws Exception {
-            mockMvc.perform(post("/api/v1/admin/categories")
+            mockMvc.perform(post(CATEGORIES)
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(json(Map.of("name", "دسته جدید"))))
@@ -121,11 +223,13 @@ class AuthorizationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("مشتری نمی‌تواند فروشندگان را ببیند")
-        void customerCannotListSellers() throws Exception {
-            mockMvc.perform(get("/api/v1/admin/sellers")
-                            .header("Authorization", bearerFor(customer)))
-                    .andExpect(status().isForbidden());
+        @DisplayName("مدیر می‌تواند دسته‌بندی بسازد")
+        void managerCanCreateCategory() throws Exception {
+            mockMvc.perform(post(CATEGORIES)
+                            .header("Authorization", bearerFor(manager))
+                            .contentType("application/json")
+                            .content(json(Map.of("name", "دسته تازه"))))
+                    .andExpect(status().isCreated());
         }
 
         @Test
@@ -145,23 +249,30 @@ class AuthorizationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("مدیر نمی‌تواند مدیر جدید بسازد — فقط ادمین")
-        void managerCannotCreateManager() throws Exception {
-            mockMvc.perform(post("/api/v1/admin/managers")
+        @DisplayName("مدیر بدون ROLE_MANAGE نمی‌تواند نقش بسازد")
+        void managerCannotCreateRole() throws Exception {
+            mockMvc.perform(post(ROLES)
                             .header("Authorization", bearerFor(manager))
                             .contentType("application/json")
                             .content(json(Map.of(
-                                    "email", "newmanager@test.local",
-                                    "initialPassword", "Initial@123",
-                                    "fullName", "مدیر جدید",
-                                    "phone", "09121234567"))))
+                                    "name", "نقش جدید",
+                                    "permissionIds", List.of(),
+                                    "requiresSellerApproval", false))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("مشتری نمی‌تواند فروشندگان را ببیند")
+        void customerCannotListSellers() throws Exception {
+            mockMvc.perform(get("/api/v1/sellers")
+                            .header("Authorization", bearerFor(customer)))
                     .andExpect(status().isForbidden());
         }
 
         @Test
         @DisplayName("خطای ۴۰۳ ساختار استاندارد پاسخ را دارد")
         void forbiddenFollowsErrorSchema() throws Exception {
-            mockMvc.perform(get("/api/v1/admin/sellers")
+            mockMvc.perform(get("/api/v1/sellers")
                             .header("Authorization", bearerFor(customer)))
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.status").value(403))
@@ -179,7 +290,7 @@ class AuthorizationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("فروشنده نمی‌تواند محصول فروشنده دیگر را ویرایش کند")
         void sellerCannotEditOthersProduct() throws Exception {
-            mockMvc.perform(put("/api/v1/seller/products/" + sellerProduct.getId())
+            mockMvc.perform(put(PRODUCTS + "/" + sellerProduct.getId())
                             .header("Authorization", bearerFor(otherSeller))
                             .contentType("application/json")
                             .content(productBody("SKU-001")))
@@ -187,9 +298,9 @@ class AuthorizationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("فروشنده نمی‌تواند محصول فروشنده دیگر را غیرفعال کند")
+        @DisplayName("فروشنده نمی‌تواند محصول دیگری را غیرفعال کند")
         void sellerCannotDeactivateOthersProduct() throws Exception {
-            mockMvc.perform(delete("/api/v1/seller/products/" + sellerProduct.getId())
+            mockMvc.perform(delete(PRODUCTS + "/" + sellerProduct.getId())
                             .header("Authorization", bearerFor(otherSeller)))
                     .andExpect(status().isForbidden());
         }
@@ -197,7 +308,7 @@ class AuthorizationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("فروشنده محصول خودش را می‌تواند ویرایش کند")
         void sellerCanEditOwnProduct() throws Exception {
-            mockMvc.perform(put("/api/v1/seller/products/" + sellerProduct.getId())
+            mockMvc.perform(put(PRODUCTS + "/" + sellerProduct.getId())
                             .header("Authorization", bearerFor(seller))
                             .contentType("application/json")
                             .content(productBody("SKU-001")))
@@ -207,7 +318,7 @@ class AuthorizationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("مدیر می‌تواند محصول هر فروشنده‌ای را ویرایش کند")
         void managerCanEditAnyProduct() throws Exception {
-            mockMvc.perform(put("/api/v1/seller/products/" + sellerProduct.getId())
+            mockMvc.perform(put(PRODUCTS + "/" + sellerProduct.getId())
                             .header("Authorization", bearerFor(manager))
                             .contentType("application/json")
                             .content(productBody("SKU-001")))
@@ -217,7 +328,7 @@ class AuthorizationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("مالک محصول با ویرایش توسط مدیر تغییر نمی‌کند")
         void ownershipSurvivesManagerEdit() throws Exception {
-            mockMvc.perform(put("/api/v1/seller/products/" + sellerProduct.getId())
+            mockMvc.perform(put(PRODUCTS + "/" + sellerProduct.getId())
                             .header("Authorization", bearerFor(manager))
                             .contentType("application/json")
                             .content(productBody("SKU-001")))
@@ -226,9 +337,9 @@ class AuthorizationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("آدرس کاربر دیگر ۴۰۴ می‌دهد — نه ۴۰۳")
+        @DisplayName("آدرس کاربر دیگر ۴۰۴ می‌دهد نه ۴۰۳")
         void othersAddressReturnsNotFound() throws Exception {
-            String created = mockMvc.perform(post("/api/v1/addresses")
+            String created = mockMvc.perform(post(ADDRESSES)
                             .header("Authorization", bearerFor(customer))
                             .contentType("application/json")
                             .content(addressBody()))
@@ -237,55 +348,27 @@ class AuthorizationTest extends BaseIntegrationTest {
 
             Long addressId = objectMapper.readTree(created).get("id").asLong();
 
-            User otherCustomer = createUser("customer2@test.local", "مشتری دوم",
-                    "USER", com.shop.online_shop.entity.UserStatus.ACTIVE);
+            User other = createUser("customer2@test.local", "مشتری دوم",
+                    RoleCode.USER, UserStatus.ACTIVE);
 
-            mockMvc.perform(get("/api/v1/addresses/" + addressId)
-                            .header("Authorization", bearerFor(otherCustomer)))
+            mockMvc.perform(get(ADDRESSES + "/" + addressId)
+                            .header("Authorization", bearerFor(other)))
                     .andExpect(status().isNotFound());
         }
-    }
-
-    // ==================== قواعد پنل ادمین ====================
-
-    @Nested
-    @DisplayName("قواعد ویرایش نقش")
-    class RoleEditing {
 
         @Test
-        @DisplayName("مجوزهای نقش ADMIN قابل تغییر نیست")
-        void adminRoleIsLocked() throws Exception {
-            Long adminRoleId = roleRepository.findByName("ADMIN").orElseThrow().getId();
-            Long anyPermissionId = roleRepository.findByName("USER").orElseThrow()
-                    .getPermissions().iterator().next().getId();
+        @DisplayName("مدیر می‌تواند آدرس همه کاربران را ببیند")
+        void managerSeesAllAddresses() throws Exception {
+            mockMvc.perform(post(ADDRESSES)
+                            .header("Authorization", bearerFor(customer))
+                            .contentType("application/json")
+                            .content(addressBody()))
+                    .andExpect(status().isCreated());
 
-            mockMvc.perform(post("/api/v1/admin/roles/" + adminRoleId
-                            + "/permissions/" + anyPermissionId)
-                            .header("Authorization", bearerFor(admin)))
-                    .andExpect(status().isForbidden());
-        }
-
-        @Test
-        @DisplayName("مجوزهای نقش USER قابل تغییر نیست")
-        void userRoleIsLocked() throws Exception {
-            Long userRoleId = roleRepository.findByName("USER").orElseThrow().getId();
-            Long anyPermissionId = roleRepository.findByName("MANAGER").orElseThrow()
-                    .getPermissions().iterator().next().getId();
-
-            mockMvc.perform(post("/api/v1/admin/roles/" + userRoleId
-                            + "/permissions/" + anyPermissionId)
-                            .header("Authorization", bearerFor(admin)))
-                    .andExpect(status().isForbidden());
-        }
-
-        @Test
-        @DisplayName("ادمین لیست نقش‌ها را با پرچم قابل‌ویرایش می‌بیند")
-        void adminSeesEditableFlag() throws Exception {
-            mockMvc.perform(get("/api/v1/admin/roles")
-                            .header("Authorization", bearerFor(admin)))
+            mockMvc.perform(get(ADDRESSES + "/all")
+                            .header("Authorization", bearerFor(manager)))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$[?(@.name == 'ADMIN')].editable").value(false))
-                    .andExpect(jsonPath("$[?(@.name == 'MANAGER')].editable").value(true));
+                    .andExpect(jsonPath("$.content[0].owner").isNotEmpty());
         }
     }
 
@@ -298,7 +381,7 @@ class AuthorizationTest extends BaseIntegrationTest {
                 "description", "توضیحات",
                 "price", 1000000,
                 "stock", 5,
-                "categoryId", leafCategory.getId()));
+                "categoryId", leaf.getId()));
     }
 
     private String addressBody() throws Exception {

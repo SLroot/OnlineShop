@@ -25,37 +25,40 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/v1/carts/me")
+@RequestMapping("/api/v1/carts")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('CART_MANAGE')")
-@Tag(name = "Shopping Cart", description = "سبد خرید کاربر جاری")
+@Tag(name = "Shopping Cart", description = "سبد خرید")
 public class CartController {
 
     private final CartService cartService;
 
-    @GetMapping
-    @Operation(summary = "مشاهده سبد خرید",
-               description = "قیمت‌ها همیشه از محصول خوانده می‌شوند. "
-                           + "اقلام غیرفعال یا ناموجود حذف و اقلام مازاد بر موجودی "
-                           + "کاهش می‌یابند؛ توضیح این تغییرات در فیلد notices می‌آید",
+    // ==================== سبد کاربر جاری ====================
+
+    @GetMapping("/me")
+    @PreAuthorize("hasAuthority('CART_MANAGE')")
+    @Operation(summary = "مشاهده سبد خرید من",
+               description = "قیمت‌ها همیشه از محصول خوانده می‌شوند. اقلام غیرفعال یا "
+                           + "ناموجود حذف و اقلام مازاد بر موجودی کاهش می‌یابند؛ "
+                           + "توضیح این تغییرات در فیلد notices می‌آید",
                security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "موفق"),
         @ApiResponse(responseCode = "403", description = "این نقش امکان خرید ندارد")
     })
-    public ResponseEntity<CartResponse> myCart(
-            @AuthenticationPrincipal UserPrincipal me) {
+    public ResponseEntity<CartResponse> myCart(@AuthenticationPrincipal UserPrincipal me) {
         return ResponseEntity.ok(cartService.getMyCart(me.getId()));
     }
 
-    @PostMapping("/items")
+    @PostMapping("/me/items")
+    @PreAuthorize("hasAuthority('CART_MANAGE')")
     @Operation(summary = "افزودن به سبد",
                description = "اگر محصول از قبل در سبد باشد، تعداد جمع می‌شود. "
                            + "تعداد نهایی از موجودی محصول بیشتر نخواهد شد",
                security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "افزوده شد"),
-        @ApiResponse(responseCode = "400", description = "محصول ناموجود، غیرفعال، یا متعلق به خودتان"),
+        @ApiResponse(responseCode = "400",
+                     description = "محصول ناموجود، غیرفعال، یا متعلق به خودتان"),
         @ApiResponse(responseCode = "404", description = "محصول یافت نشد")
     })
     public ResponseEntity<CartResponse> addItem(
@@ -66,14 +69,12 @@ public class CartController {
                 cartService.addItem(me.getId(), request.productId(), request.quantity()));
     }
 
-    @PatchMapping("/items/{itemId}")
+    @PatchMapping("/me/items/{itemId}")
+    @PreAuthorize("hasAuthority('CART_MANAGE')")
     @Operation(summary = "تغییر تعداد یک قلم",
                description = "تعداد جایگزین می‌شود، نه اضافه",
                security = @SecurityRequirement(name = "bearerAuth"))
-    @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "به‌روز شد"),
-        @ApiResponse(responseCode = "404", description = "این قلم در سبد شما نیست")
-    })
+    @ApiResponse(responseCode = "404", description = "این قلم در سبد شما نیست")
     public ResponseEntity<CartResponse> updateItem(
             @AuthenticationPrincipal UserPrincipal me,
             @PathVariable Long itemId,
@@ -83,7 +84,8 @@ public class CartController {
                 cartService.updateQuantity(me.getId(), itemId, request.quantity()));
     }
 
-    @DeleteMapping("/items/{itemId}")
+    @DeleteMapping("/me/items/{itemId}")
+    @PreAuthorize("hasAuthority('CART_MANAGE')")
     @Operation(summary = "حذف یک قلم از سبد",
                security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<CartResponse> removeItem(
@@ -93,12 +95,23 @@ public class CartController {
         return ResponseEntity.ok(cartService.removeItem(me.getId(), itemId));
     }
 
-    @DeleteMapping("/items")
+    @DeleteMapping("/me/items")
+    @PreAuthorize("hasAuthority('CART_MANAGE')")
     @Operation(summary = "خالی کردن سبد",
                security = @SecurityRequirement(name = "bearerAuth"))
-    public ResponseEntity<CartResponse> clear(
-            @AuthenticationPrincipal UserPrincipal me) {
-
+    public ResponseEntity<CartResponse> clear(@AuthenticationPrincipal UserPrincipal me) {
         return ResponseEntity.ok(cartService.clear(me.getId()));
+    }
+
+    // ==================== سبد سایر کاربران ====================
+
+    @GetMapping("/users/{userId}")
+    @PreAuthorize("hasAuthority('CART_VIEW_ALL')")
+    @Operation(summary = "سبد خرید یک کاربر",
+               description = "برای پشتیبانی و بررسی مشکلات کاربران. "
+                           + "برخلاف مسیر کاربر، سبد اصلاح نمی‌شود",
+               security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<CartResponse> userCart(@PathVariable Long userId) {
+        return ResponseEntity.ok(cartService.getUserCart(userId));
     }
 }

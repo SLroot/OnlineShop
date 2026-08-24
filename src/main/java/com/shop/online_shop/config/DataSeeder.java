@@ -2,6 +2,7 @@ package com.shop.online_shop.config;
 
 import com.shop.online_shop.entity.Permission;
 import com.shop.online_shop.entity.Role;
+import com.shop.online_shop.entity.RoleCode;
 import com.shop.online_shop.repository.PermissionRepository;
 import com.shop.online_shop.repository.RoleRepository;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,7 +31,7 @@ public class DataSeeder implements CommandLineRunner {
     private static final String[][] PERMISSIONS = {
         // محصولات
         {"PRODUCT_READ",       "PRODUCT",  "READ",       "دیدن محصولات"},
-        {"PRODUCT_READ_OWN",   "PRODUCT",  "READ_OWN",   "دیدن محصولات خود فروشنده"},
+        {"PRODUCT_READ_OWN",   "PRODUCT",  "READ_OWN",   "دیدن محصولات خود"},
         {"PRODUCT_CREATE",     "PRODUCT",  "CREATE",     "افزودن محصول"},
         {"PRODUCT_UPDATE",     "PRODUCT",  "UPDATE",     "ویرایش محصول"},
         {"PRODUCT_DELETE",     "PRODUCT",  "DELETE",     "حذف محصول"},
@@ -50,95 +50,78 @@ public class DataSeeder implements CommandLineRunner {
         {"ORDER_READ",         "ORDER",    "READ",       "دیدن سفارش‌های خود"},
         {"ORDER_READ_ALL",     "ORDER",    "READ_ALL",   "دیدن سفارش‌های همه"},
         {"ORDER_UPDATE",       "ORDER",    "UPDATE",     "تغییر وضعیت هر سفارش"},
-        {"ORDER_FULFILL",      "ORDER",    "FULFILL",    "انجام سفارش — تغییر وضعیت اقلام خود"},
+        {"ORDER_FULFILL",      "ORDER",    "FULFILL",    "انجام سفارش — اقلام خود"},
 
         // آدرس
         {"ADDRESS_MANAGE",     "ADDRESS",  "MANAGE",     "مدیریت آدرس‌های خود"},
         {"ADDRESS_READ_ALL",   "ADDRESS",  "READ_ALL",   "دیدن آدرس‌های همه"},
 
-        // نظرات
-        {"REVIEW_CREATE",      "REVIEW",   "CREATE",     "ثبت نظر"},
-        {"REVIEW_MODERATE",    "REVIEW",   "MODERATE",   "مدیریت نظرات"},
-
         // پرداخت
         {"PAYMENT_READ",       "PAYMENT",  "READ",       "دیدن پرداخت‌های خود"},
         {"PAYMENT_READ_ALL",   "PAYMENT",  "READ_ALL",   "دیدن پرداخت‌های همه"},
 
-        // کاربران و نقش‌ها
+        // کاربران
         {"USER_READ",          "USER",     "READ",       "دیدن کاربران"},
-        {"USER_MANAGE",        "USER",     "MANAGE",     "مدیریت کاربران"},
-        {"ROLE_READ",          "ROLE",     "READ",       "دیدن نقش‌ها"},
-        {"ROLE_MANAGE",        "ROLE",     "MANAGE",     "مدیریت نقش‌ها"},
+        {"USER_CREATE",        "USER",     "CREATE",     "ساخت کاربر با نقش دلخواه"},
+        {"USER_MANAGE",        "USER",     "MANAGE",     "مدیریت وضعیت و نقش کاربران"},
 
-        // ممیزی
-        {"AUDIT_READ",         "AUDIT",    "READ",       "مشاهده گزارش رویدادها"},
+        // نقش‌ها
+        {"ROLE_READ",          "ROLE",     "READ",       "دیدن نقش‌ها و مجوزها"},
+        {"ROLE_MANAGE",        "ROLE",     "MANAGE",     "ساخت و ویرایش نقش‌ها"},
 
         // فروشندگان
         {"SELLER_REVIEW",      "SELLER",   "REVIEW",     "بررسی و مدیریت فروشندگان"},
+
+        // ممیزی
+        {"AUDIT_READ",         "AUDIT",    "READ",       "مشاهده گزارش رویدادها"},
     };
 
-    private static final Map<String, List<String>> ROLE_PERMISSIONS = buildRoleMap();
-
-    private static final Map<String, String> ROLE_DESCRIPTIONS = Map.of(
-        "USER",    "کاربر عادی",
-        "SELLER",  "فروشنده",
-        "MANAGER", "مدیر",
-        "ADMIN",   "ادمین کل"
-    );
-
-    private static Map<String, List<String>> buildRoleMap() {
-        Map<String, List<String>> map = new LinkedHashMap<>();
-
-        // مشتری — تنها نقشی که خرید می‌کند
-        map.put("USER", List.of(
-            "PRODUCT_READ",
-            "CATEGORY_READ",
-            "CART_MANAGE",
-            "ORDER_CREATE", "ORDER_READ",
-            "ADDRESS_MANAGE",
-            "REVIEW_CREATE",
-            "PAYMENT_READ"
-        ));
-
-        // فروشنده — بدون CART_MANAGE و ORDER_CREATE چون خرید نمی‌کند
-        map.put("SELLER", List.of(
-            "PRODUCT_READ", "PRODUCT_READ_OWN", "PRODUCT_CREATE",
-            "PRODUCT_UPDATE", "PRODUCT_DELETE",
-            "CATEGORY_READ",
-            "ORDER_READ", "ORDER_FULFILL",
-            "ADDRESS_MANAGE",
-            "PAYMENT_READ"
-        ));
-
-        // مدیر — بدون CART_MANAGE و ORDER_CREATE
-        map.put("MANAGER", List.of(
-            "PRODUCT_READ", "PRODUCT_READ_OWN", "PRODUCT_CREATE",
-            "PRODUCT_UPDATE", "PRODUCT_DELETE", "PRODUCT_MANAGE_ALL",
-            "CATEGORY_READ", "CATEGORY_MANAGE",
-            "CART_VIEW_ALL",
-            "ORDER_READ", "ORDER_READ_ALL", "ORDER_UPDATE", "ORDER_FULFILL",
-            "ADDRESS_MANAGE", "ADDRESS_READ_ALL",
-            "REVIEW_MODERATE",
-            "PAYMENT_READ", "PAYMENT_READ_ALL",
-            "USER_READ", "ROLE_READ",
-            "AUDIT_READ",
-            "SELLER_REVIEW"
-        ));
-
-        return map;
+    /** permissions == null یعنی همه مجوزها */
+    private record BaseRole(String code, String name, String description,
+                            boolean sellerApproval, boolean openRegistration,
+                            List<String> permissions) {
     }
 
-    /**
-     * قابل اجرای مکرر: مجوزها و نقش‌های موجود دوباره ساخته نمی‌شوند،
-     * ولی موارد جدید به دیتابیس اضافه می‌گردند.
-     */
+    private static final List<BaseRole> BASE_ROLES = List.of(
+
+        new BaseRole(RoleCode.USER, "کاربر عادی",
+                "مشتری سامانه — خرید و مدیریت حساب خود",
+                false, true,
+                List.of("PRODUCT_READ", "CATEGORY_READ", "CART_MANAGE",
+                        "ORDER_CREATE", "ORDER_READ", "ADDRESS_MANAGE", "PAYMENT_READ")),
+
+        new BaseRole(RoleCode.SELLER, "فروشنده",
+                "عرضه محصول و انجام سفارش‌های مربوط به خود",
+                true, true,
+                List.of("PRODUCT_READ", "PRODUCT_READ_OWN", "PRODUCT_CREATE",
+                        "PRODUCT_UPDATE", "PRODUCT_DELETE", "CATEGORY_READ",
+                        "ORDER_READ", "ORDER_FULFILL", "ADDRESS_MANAGE", "PAYMENT_READ")),
+
+        new BaseRole(RoleCode.MANAGER, "مدیر",
+                "مدیریت کاتالوگ، سفارش‌ها و فروشندگان",
+                false, false,
+                List.of("PRODUCT_READ", "PRODUCT_READ_OWN", "PRODUCT_CREATE",
+                        "PRODUCT_UPDATE", "PRODUCT_DELETE", "PRODUCT_MANAGE_ALL",
+                        "CATEGORY_READ", "CATEGORY_MANAGE", "CART_VIEW_ALL",
+                        "ORDER_READ", "ORDER_READ_ALL", "ORDER_UPDATE", "ORDER_FULFILL",
+                        "ADDRESS_MANAGE", "ADDRESS_READ_ALL",
+                        "PAYMENT_READ", "PAYMENT_READ_ALL",
+                        "USER_READ", "ROLE_READ", "SELLER_REVIEW", "AUDIT_READ")),
+
+        new BaseRole(RoleCode.ADMIN, "ادمین کل",
+                "دسترسی کامل به تمام بخش‌های سامانه",
+                false, false,
+                null)
+    );
+
     @Override
     @Transactional
     public void run(String... args) {
         Map<String, Permission> permissions = syncPermissions();
-        syncRoles(permissions);
+        seedBaseRoles(permissions);
     }
 
+    /** مجوزهای تازه اضافه می‌شوند؛ موجودها دست‌نخورده می‌مانند */
     private Map<String, Permission> syncPermissions() {
         Map<String, Permission> existing = new HashMap<>();
         permissionRepository.findAll().forEach(p -> existing.put(p.getName(), p));
@@ -146,72 +129,69 @@ public class DataSeeder implements CommandLineRunner {
         int created = 0;
 
         for (String[] row : PERMISSIONS) {
-            String name = row[0];
-
-            if (existing.containsKey(name)) {
+            if (existing.containsKey(row[0])) {
                 continue;
             }
-
             Permission saved = permissionRepository.save(Permission.builder()
-                    .name(name)
+                    .name(row[0])
                     .resource(row[1])
                     .action(row[2])
                     .description(row[3])
                     .build());
-
-            existing.put(name, saved);
+            existing.put(row[0], saved);
             created++;
         }
 
         if (created > 0) {
-            log.info("Created {} new permissions (total: {})", created, existing.size());
+            log.info("Created {} new permissions (total {})", created, existing.size());
         }
         return existing;
     }
 
-    private void syncRoles(Map<String, Permission> permissions) {
-        ROLE_PERMISSIONS.forEach((roleName, permissionNames) -> {
-            Set<Permission> perms = new HashSet<>();
+    /**
+     * نقش‌های پایه تنها در نخستین اجرا ساخته می‌شوند.
+     * پس از آن مجوزهایشان در اختیار مدیر سامانه است و seeder
+     * تغییرات او را بازنویسی نمی‌کند.
+     */
+    private void seedBaseRoles(Map<String, Permission> permissions) {
+        for (BaseRole base : BASE_ROLES) {
 
-            for (String permissionName : permissionNames) {
-                Permission permission = permissions.get(permissionName);
-
-                if (permission == null) {
-                    log.warn("Permission {} referenced by role {} does not exist",
-                            permissionName, roleName);
-                    continue;
-                }
-                perms.add(permission);
+            if (roleRepository.existsByCode(base.code())) {
+                continue;
             }
 
-            upsertRole(roleName, perms);
-        });
+            Set<Permission> perms = base.permissions() == null
+                    ? new HashSet<>(permissions.values())
+                    : resolve(base.permissions(), permissions, base.code());
 
-        // ADMIN همه مجوزها را دارد
-        upsertRole("ADMIN", new HashSet<>(permissions.values()));
-    }
-
-    private void upsertRole(String name, Set<Permission> permissions) {
-        Role role = roleRepository.findByName(name).orElse(null);
-
-        if (role == null) {
             roleRepository.save(Role.builder()
-                    .name(name)
-                    .description(ROLE_DESCRIPTIONS.get(name))
-                    .permissions(permissions)
+                    .code(base.code())
+                    .name(base.name())
+                    .description(base.description())
+                    .permissions(perms)
+                    .systemRole(true)
+                    .requiresSellerApproval(base.sellerApproval())
+                    .openRegistration(base.openRegistration())
                     .build());
 
-            log.info("Created role {} with {} permissions", name, permissions.size());
-            return;
+            log.info("Created base role {} with {} permissions", base.code(), perms.size());
         }
+    }
 
-        int before = role.getPermissions().size();
-        role.getPermissions().addAll(permissions);
-        int after = role.getPermissions().size();
+    private Set<Permission> resolve(List<String> names,
+                                    Map<String, Permission> pool,
+                                    String roleCode) {
+        Set<Permission> result = new HashSet<>();
 
-        if (after > before) {
-            roleRepository.save(role);
-            log.info("Role {} updated: {} -> {} permissions", name, before, after);
+        for (String name : names) {
+            Permission permission = pool.get(name);
+
+            if (permission == null) {
+                log.warn("Role {} references unknown permission {}", roleCode, name);
+                continue;
+            }
+            result.add(permission);
         }
+        return result;
     }
 }

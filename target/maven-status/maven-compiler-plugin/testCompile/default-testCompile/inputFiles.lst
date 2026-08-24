@@ -1,4 +1,5 @@
 /home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/BaseIntegrationTest.java
+/home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/DynamicRoleTest.java
 /home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/AuthorizationTest.java
 /home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/unit/CategoryHierarchyTest.java
 /home/slroot/Downloads/online-shop/backend/src/test/java/com/shop/online_shop/OnlineShopApplicationTests.java

@@ -172,7 +172,7 @@ public class AuthController {
         return ResponseEntity.ok(authService.updateProfile(principal.getId(), request));
     }
 
-    @PatchMapping("/me/password")
+    @PostMapping("/me/password")
     @Operation(summary = "تغییر رمز عبور — کاربر وارد شده",
                description = "برای کاربری که رمز فعلی‌اش را می‌داند و وارد شده است. "
                            + "رمز فعلی برای احراز هویت مجدد الزامی است تا اگر کسی به دستگاه "

@@ -31,25 +31,26 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtFilter;
     private final RestAuthenticationEntryPoint entryPoint;     
     private final RestAccessDeniedHandler accessDeniedHandler; 
-
+    
     private static final String[] PUBLIC_GET = {
-        "/api/v1/products/**",
+        "/api/v1/products",
+        "/api/v1/products/*",
+        "/api/v1/categories",
         "/api/v1/categories/**"
     };
 
     private static final String[] PUBLIC_ALL = {
         "/api/v1/auth/register",
+        "/api/v1/auth/register/seller",
         "/api/v1/auth/login",
         "/api/v1/auth/refresh",
         "/api/v1/auth/password/forgot",
         "/api/v1/auth/password/reset",
-        "/media/**",                      
+        "/media/**",
         "/swagger-ui.html",
         "/swagger-ui/**",
-        "/v3/api-docs/**",
-        "/api/v1/auth/register/seller"
+        "/v3/api-docs/**"
     };
-
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
