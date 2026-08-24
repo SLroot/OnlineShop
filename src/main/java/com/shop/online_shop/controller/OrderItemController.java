@@ -38,11 +38,10 @@ public class OrderItemController {
     private final OrderService orderService;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('ORDER_FULFILL') or hasAuthority('ORDER_READ_ALL')")
+    @PreAuthorize("hasAnyAuthority('ORDER_FULFILL', 'ORDER_READ_ALL')")
     @Operation(summary = "فهرست اقلام سفارش",
-               description = "mine (پیش‌فرض) اقلام مربوط به محصولات خودم که نیازمند "
-                           + "ORDER_FULFILL است، all اقلام همه فروشندگان که نیازمند "
-                           + "ORDER_READ_ALL است",
+               description = "mine اقلام مربوط به محصولات خودم که نیازمند ORDER_FULFILL است، "
+                           + "all اقلام همه فروشندگان که نیازمند ORDER_READ_ALL است",
                security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "موفق"),
@@ -71,11 +70,11 @@ public class OrderItemController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAuthority('ORDER_FULFILL') or hasAuthority('ORDER_UPDATE')")
+    @PreAuthorize("hasAnyAuthority('ORDER_FULFILL', 'ORDER_UPDATE')")
     @Operation(summary = "تغییر وضعیت یک قلم",
                description = "چرخه مجاز: PAID سپس PROCESSING سپس SHIPPED سپس DELIVERED. "
-                           + "پرش از مراحل یا بازگشت به عقب مجاز نیست. فروشنده تنها "
-                           + "اقلام خودش را و دارنده ORDER_UPDATE همه را تغییر می‌دهد",
+                           + "پرش از مراحل یا بازگشت به عقب مجاز نیست. فروشنده تنها اقلام "
+                           + "خودش را و دارنده ORDER_UPDATE همه را تغییر می‌دهد",
                security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "به‌روز شد"),
@@ -92,10 +91,10 @@ public class OrderItemController {
     }
 
     @PatchMapping("/{id}/cancel")
-    @PreAuthorize("hasAuthority('ORDER_FULFILL') or hasAuthority('ORDER_UPDATE')")
+    @PreAuthorize("hasAnyAuthority('ORDER_FULFILL', 'ORDER_UPDATE')")
     @Operation(summary = "لغو یک قلم",
-               description = "مثلاً وقتی کالا آسیب دیده است. موجودی بازمی‌گردد "
-                           + "و مبلغ سفارش بازمحاسبه می‌شود",
+               description = "مثلاً وقتی کالا آسیب دیده است. موجودی بازمی‌گردد و "
+                           + "مبلغ سفارش بازمحاسبه می‌شود",
                security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<SellerOrderItemResponse> cancel(
             @PathVariable Long id,

@@ -51,10 +51,10 @@ public class OrderController {
     // ==================== فهرست و جزئیات ====================
 
     @GetMapping
-    @PreAuthorize("hasAuthority('ORDER_READ')")
+    @PreAuthorize("hasAnyAuthority('ORDER_READ', 'ORDER_READ_ALL')")
     @Operation(summary = "فهرست سفارش‌ها",
                description = "دامنه دید با پارامتر scope تعیین می‌شود. "
-                           + "mine (پیش‌فرض) سفارش‌های خودم، "
+                           + "mine سفارش‌های خودم که نیازمند ORDER_READ است، "
                            + "all سفارش‌های همه کاربران که نیازمند ORDER_READ_ALL است",
                security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses({
@@ -87,10 +87,10 @@ public class OrderController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('ORDER_READ')")
+    @PreAuthorize("hasAnyAuthority('ORDER_READ', 'ORDER_READ_ALL')")
     @Operation(summary = "جزئیات سفارش",
-               description = "شامل وضعیت تک‌تک اقلام و اطلاعات پرداخت. "
-                           + "اطلاعات مشتری تنها برای دارنده ORDER_READ_ALL نمایش داده می‌شود",
+               description = "شامل وضعیت تک‌تک اقلام و اطلاعات پرداخت. اطلاعات مشتری "
+                           + "تنها برای دارنده ORDER_READ_ALL نمایش داده می‌شود",
                security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponse(responseCode = "404", description = "سفارش یافت نشد یا متعلق به شما نیست")
     public ResponseEntity<OrderResponse> getById(
@@ -107,8 +107,8 @@ public class OrderController {
     @PreAuthorize("hasAuthority('ORDER_CREATE')")
     @Operation(summary = "ثبت سفارش از سبد خرید",
                description = "کل سبد به سفارش تبدیل می‌شود. اقلام ناموجود یا غیرفعال "
-                           + "کنار گذاشته شده و توضیحشان در notices می‌آید. "
-                           + "موجودی همین لحظه کسر و بیست دقیقه مهلت پرداخت داده می‌شود",
+                           + "کنار گذاشته شده و توضیحشان در notices می‌آید. موجودی همین "
+                           + "لحظه کسر و بیست دقیقه مهلت پرداخت داده می‌شود",
                security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "سفارش ثبت شد"),
@@ -130,9 +130,10 @@ public class OrderController {
     }
 
     @PatchMapping("/{id}/cancel")
-    @PreAuthorize("hasAuthority('ORDER_READ')")
+    @PreAuthorize("hasAnyAuthority('ORDER_READ', 'ORDER_UPDATE')")
     @Operation(summary = "لغو سفارش",
-               description = "تا پیش از ارسال ممکن است. موجودی بازمی‌گردد و "
+               description = "تا پیش از ارسال ممکن است. مشتری سفارش خودش را و دارنده "
+                           + "ORDER_UPDATE هر سفارشی را لغو می‌کند. موجودی بازمی‌گردد و "
                            + "در صورت پرداخت، مبلغ بازپرداخت می‌شود",
                security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses({
@@ -157,9 +158,9 @@ public class OrderController {
     @PostMapping("/{id}/payment")
     @PreAuthorize("hasAuthority('ORDER_CREATE')")
     @Operation(summary = "پرداخت سفارش — شبیه‌ساز",
-               description = "درگاه واقعی نیست. با simulateSuccess=false می‌توان "
-                           + "مسیر پرداخت ناموفق را نیز آزمود. "
-                           + "پس از پرداخت موفق، همه اقلام به وضعیت PAID می‌روند",
+               description = "درگاه واقعی نیست. با simulateSuccess=false می‌توان مسیر "
+                           + "پرداخت ناموفق را نیز آزمود. پس از پرداخت موفق، همه اقلام "
+                           + "به وضعیت PAID می‌روند",
                security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "پرداخت موفق"),
@@ -184,7 +185,7 @@ public class OrderController {
     }
 
     @GetMapping("/{id}/payment")
-    @PreAuthorize("hasAuthority('PAYMENT_READ')")
+    @PreAuthorize("hasAnyAuthority('PAYMENT_READ', 'PAYMENT_READ_ALL')")
     @Operation(summary = "وضعیت پرداخت سفارش",
                security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<Map<String, Object>> getPayment(

@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.shop.online_shop.AuthorizationTest$InsufficientPermission
 -------------------------------------------------------------------------------
-Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.191 s -- in com.shop.online_shop.AuthorizationTest$InsufficientPermission
+Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.206 s -- in com.shop.online_shop.AuthorizationTest$InsufficientPermission

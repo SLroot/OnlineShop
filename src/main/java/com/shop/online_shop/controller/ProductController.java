@@ -21,11 +21,27 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 
+/**
+ * کاتالوگ محصولات.
+ *
+ * دسترسی در دو لایه بررسی می‌شود:
+ * PreAuthorize تعیین می‌کند آیا کاربر اجازه این نوع عملیات را دارد،
+ * و AccessGuard درون سرویس تعیین می‌کند آیا روی این رکورد خاص حق دارد.
+ */
 @RestController
 @RequestMapping("/api/v1/products")
 @RequiredArgsConstructor
@@ -38,12 +54,10 @@ public class ProductController {
 
     @GetMapping
     @Operation(summary = "فهرست محصولات",
-               description = """
-                       دامنه دید با پارامتر scope تعیین می‌شود:
-                       public — محصولات فعال، بدون نیاز به ورود
-                       mine — محصولات خودم شامل غیرفعال‌ها، نیازمند PRODUCT_READ_OWN
-                       all — محصولات همه فروشندگان، نیازمند PRODUCT_MANAGE_ALL
-                       """)
+               description = "دامنه دید با پارامتر scope تعیین می‌شود. "
+                           + "public محصولات فعال بدون نیاز به ورود، "
+                           + "mine محصولات خودم شامل غیرفعال‌ها که نیازمند PRODUCT_READ_OWN است، "
+                           + "all محصولات همه فروشندگان که نیازمند PRODUCT_MANAGE_ALL است")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "موفق"),
         @ApiResponse(responseCode = "400", description = "مقدار scope نامعتبر"),
@@ -94,7 +108,8 @@ public class ProductController {
 
     @GetMapping("/{id}")
     @Operation(summary = "جزئیات محصول",
-               description = "محصول غیرفعال تنها برای مالک و مدیر قابل مشاهده است")
+               description = "محصول غیرفعال تنها برای مالک و دارنده مجوز مدیریت سراسری "
+                           + "قابل مشاهده است")
     public ResponseEntity<ProductResponse> getById(
             @PathVariable Long id,
             @AuthenticationPrincipal UserPrincipal me) {
@@ -105,16 +120,15 @@ public class ProductController {
     // ==================== ساخت و ویرایش ====================
 
     @PostMapping
-    @PreAuthorize("hasAuthority('PRODUCT_CREATE')")
+    @PreAuthorize("hasAnyAuthority('PRODUCT_CREATE', 'PRODUCT_MANAGE_ALL')")
     @Operation(summary = "افزودن محصول",
-               description = "دسته‌بندی باید پایین‌ترین سطح باشد. "
-                           + "دارنده PRODUCT_MANAGE_ALL می‌تواند با ارسال sellerId "
-                           + "محصول را به نام فروشنده دیگری ثبت کند",
+               description = "دسته‌بندی باید پایین‌ترین سطح باشد. دارنده PRODUCT_MANAGE_ALL "
+                           + "می‌تواند با ارسال sellerId محصول را به نام فروشنده دیگری ثبت کند",
                security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "ساخته شد"),
         @ApiResponse(responseCode = "400", description = "دسته‌بندی یا فروشنده نامعتبر"),
-        @ApiResponse(responseCode = "403", description = "مجوز PRODUCT_CREATE ندارید"),
+        @ApiResponse(responseCode = "403", description = "مجوز لازم را ندارید"),
         @ApiResponse(responseCode = "409", description = "کد کالا تکراری")
     })
     public ResponseEntity<ProductResponse> create(
@@ -127,7 +141,7 @@ public class ProductController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('PRODUCT_UPDATE')")
+    @PreAuthorize("hasAnyAuthority('PRODUCT_UPDATE', 'PRODUCT_MANAGE_ALL')")
     @Operation(summary = "ویرایش محصول",
                description = "فروشنده تنها محصول خودش، دارنده PRODUCT_MANAGE_ALL همه را. "
                            + "مالک محصول با ویرایش تغییر نمی‌کند",
@@ -146,7 +160,7 @@ public class ProductController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('PRODUCT_DELETE')")
+    @PreAuthorize("hasAnyAuthority('PRODUCT_DELETE', 'PRODUCT_MANAGE_ALL')")
     @Operation(summary = "غیرفعال‌سازی محصول",
                description = "حذف واقعی نمی‌شود چون سفارش‌های گذشته به آن ارجاع دارند. "
                            + "محصول از سبد خرید همه کاربران نیز حذف می‌گردد",
@@ -160,7 +174,7 @@ public class ProductController {
     }
 
     @PatchMapping("/{id}/activate")
-    @PreAuthorize("hasAuthority('PRODUCT_UPDATE')")
+    @PreAuthorize("hasAnyAuthority('PRODUCT_UPDATE', 'PRODUCT_MANAGE_ALL')")
     @Operation(summary = "فعال‌سازی مجدد محصول",
                security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<ProductResponse> activate(
@@ -173,11 +187,16 @@ public class ProductController {
     // ==================== تصاویر ====================
 
     @PostMapping(value = "/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAuthority('PRODUCT_UPDATE')")
+    @PreAuthorize("hasAnyAuthority('PRODUCT_UPDATE', 'PRODUCT_MANAGE_ALL')")
     @Operation(summary = "افزودن تصویر",
-               description = "حداکثر ۳ تصویر، هر کدام تا ۲ مگابایت، "
-                           + "با فرمت JPEG، PNG یا WebP. اولین تصویر خودکار اصلی می‌شود",
+               description = "حداکثر سه تصویر، هر کدام تا دو مگابایت، با فرمت "
+                           + "JPEG، PNG یا WebP. نخستین تصویر خودکار اصلی می‌شود",
                security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "تصویر اضافه شد"),
+        @ApiResponse(responseCode = "400", description = "فرمت نامعتبر، حجم زیاد یا سقف تصاویر"),
+        @ApiResponse(responseCode = "403", description = "محصول متعلق به شما نیست")
+    })
     public ResponseEntity<ProductResponse> addImage(
             @PathVariable Long id,
             @RequestParam("file") MultipartFile file,
@@ -189,9 +208,9 @@ public class ProductController {
     }
 
     @DeleteMapping("/{id}/images/{imageId}")
-    @PreAuthorize("hasAuthority('PRODUCT_UPDATE')")
+    @PreAuthorize("hasAnyAuthority('PRODUCT_UPDATE', 'PRODUCT_MANAGE_ALL')")
     @Operation(summary = "حذف تصویر",
-               description = "اگر تصویر اصلی حذف شود، اولین تصویر باقی‌مانده جایگزین می‌شود",
+               description = "اگر تصویر اصلی حذف شود، نخستین تصویر باقی‌مانده جایگزین می‌شود",
                security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<Void> deleteImage(
             @PathVariable Long id,
@@ -203,7 +222,7 @@ public class ProductController {
     }
 
     @PatchMapping("/{id}/images/{imageId}/primary")
-    @PreAuthorize("hasAuthority('PRODUCT_UPDATE')")
+    @PreAuthorize("hasAnyAuthority('PRODUCT_UPDATE', 'PRODUCT_MANAGE_ALL')")
     @Operation(summary = "تعیین تصویر اصلی",
                security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<ProductResponse> setPrimary(

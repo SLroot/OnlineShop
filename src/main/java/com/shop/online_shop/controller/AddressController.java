@@ -77,8 +77,9 @@ public class AddressController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADDRESS_MANAGE')")
+    @PreAuthorize("hasAnyAuthority('ADDRESS_MANAGE', 'ADDRESS_READ_ALL')")
     @Operation(summary = "جزئیات یک آدرس",
+               description = "آدرس کاربر دیگر یافت نمی‌شود، مگر برای دارنده ADDRESS_READ_ALL",
                security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponse(responseCode = "404", description = "آدرس یافت نشد یا متعلق به شما نیست")
     public ResponseEntity<AddressResponse> getById(
